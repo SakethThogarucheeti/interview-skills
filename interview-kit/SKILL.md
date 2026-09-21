@@ -189,7 +189,7 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 ### 4.3 `backend/docker-compose.yml`
 ```yaml
-# Local Postgres + Redis for the live demo. Start with: docker compose up -d
+# Local Postgres + Redis for the live demo. Start with: docker compose up -d --wait
 # Then run the backend normally (uvicorn) against the default DATABASE_URL /
 # REDIS_URL in app/deps.py -- no other config needed.
 services:
@@ -201,10 +201,18 @@ services:
       POSTGRES_DB: app
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      retries: 10
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 10
 ```
 
 ### 4.4 `backend/app/models.py`
@@ -764,12 +772,12 @@ EOF
 git init && git add -A && git commit -m "Scaffold from interview-kit"
 cd backend && timeout 60 uv venv .venv \
   && timeout 180 uv pip install -r requirements.txt > /tmp/uv-install.log 2>&1
-cd ../frontend && timeout 180 npm install > /tmp/npm-install.log 2>&1
+cd ../frontend && timeout 180 npm install --no-audit --no-fund > /tmp/npm-install.log 2>&1
 ```
 Then, all backgrounded/parallel, each logged so progress is checkable without blocking. Use `uv run` (not `source .venv/bin/activate`) — activation doesn't survive into a new shell/tool call, `uv run` doesn't need it:
 ```bash
 # from backend/
-docker compose up -d          # postgres:5432, redis:6379 -- already detached, no log needed
+docker compose up -d --wait   # postgres:5432, redis:6379 -- blocks until healthy, not just started
 uv run uvicorn app.main:app --reload --port 8000 > /tmp/uvicorn.log 2>&1 &
 # from frontend/
 npm run dev > /tmp/vite.log 2>&1 &
@@ -819,7 +827,7 @@ Add the backend as a third service in `backend/docker-compose.yml` (append, don'
       - redis
 ```
 ```bash
-timeout 240 ssh root@<droplet-ip> "cd /root/app/backend && docker compose up -d --build" \
+timeout 240 ssh root@<droplet-ip> "cd /root/app/backend && docker compose up -d --build --wait" \
   > /tmp/deploy-build.log 2>&1
 timeout 10 curl http://<droplet-ip>/health   # confirm {"status":"ok"} before calling it done
 ```
