@@ -1,6 +1,6 @@
 ---
 name: interview-kit
-description: Single self-contained kit for a timed "build a full-stack app in ~2 hours" interview (e.g. DigitalOcean's format) — covers HLD talking points for scaling/traffic-spike/reliability questions, SOLID/DRY/GoF LLD patterns, a complete copy-paste FastAPI+Postgres+Redis+React scaffold (every file inlined below), a Cursor workflow section (the interview runs in Cursor, not here), and time-compression tactics throughout. Use as soon as the user shares the interview prompt and wants to start building, asks about system design/scaling questions for this interview, wants the scaffold code, or asks about using Cursor for it. Everything needed lives in this one file — no other skill or template directory required.
+description: Single self-contained kit for a timed "build a full-stack app in ~2 hours" interview (e.g. DigitalOcean's format) — covers requirements/goal-scoping and a pitfall scan (single points of failure, spiky-traffic tradeoffs, race conditions, missing indexes/pagination) run during the design phase itself, HLD talking points for scaling/reliability follow-ups, SOLID/DRY/GoF LLD patterns, a complete copy-paste FastAPI+Postgres+Redis+React scaffold (every file inlined below), a Cursor workflow section (the interview runs in Cursor, not here), and time-compression tactics throughout. Use as soon as the user shares the interview prompt and wants to start building, asks about system design/scaling questions for this interview, wants the scaffold code, or asks about using Cursor for it. Everything needed lives in this one file — no other skill or template directory required.
 ---
 
 # Interview kit — 2-hour full-stack build
@@ -21,10 +21,11 @@ The real enemy in a 2-hour window is idle/serial time, not typing speed.
 
 ## 1. Requirements & HLD (~10 min, don't exceed)
 
-Ask every open question in one batch, not one at a time; skip asking anything that doesn't change scope and just state the assumption. Cover:
+Ask every open question in one batch, not one at a time; skip asking anything that doesn't change scope and just state the assumption. The output of this step is a short, explicit statement of goals and non-goals — not just information gathered, an actual decision you (and the interviewer) can hold the rest of the build to. Cover:
 - **Core entities & actions** — what does the user create/read/update/delete?
 - **Read vs write ratio** — most prompts (shorteners, polls, chat, task boards, rate limiters, notification systems) are read-heavy or write-bursty; say which, it drives the caching/scaling story.
 - **Consistency requirement** — strongly consistent (payments, inventory) or eventually consistent (view counts, feeds, likes)? Most interview prompts tolerate eventual consistency — say so, it simplifies everything downstream.
+- **The specific risk this prompt implies** — is there a plausible spiky-traffic scenario in this prompt (a link going viral, a vote surge), or not? Naming this now is what makes the pitfall scan below targeted instead of generic.
 - **Explicit non-goals** — state what you're NOT building (multi-region, multi-tenant auth, billing) so scope reads as deliberate, not accidental.
 
 ### Default architecture: "one box, clean seams"
@@ -38,7 +39,22 @@ Ask every open question in one batch, not one at a time; skip asking anything th
 
 Postgres + Redis are provisioned from minute one via the scaffold's `docker-compose.yml` (§4), not swapped in later. Why this architecture wins in a 2-hour format: one deployable, no network calls between your own services to debug under time pressure, and every "how would you scale this" question has a crisp, concrete answer (§3) because the seams (repository, cache, pub/sub) are already there in the code. Do **not** start with microservices, message queues, or multi-region — that costs implementation time you don't have and reads as a red flag, not a strength, in a 2-hour app.
 
-If the prompt is small (a simple CRUD tool), say so explicitly and skip straight to §4 — don't invent structure the app doesn't need.
+**Start from the simplest version of this that satisfies the entities/goals above — a simple design already scales further than people expect, and it's the only version you can actually finish.** Don't add anything below because it seems "more correct"; add it only because the pitfall scan finds a real, cheap-to-fix risk.
+
+### Pitfall scan — do this now, on paper/out loud, before writing code
+
+Run the simple design above against this checklist. The point isn't to fix everything — most items are a one-sentence mitigation you state and don't build, exactly like §3. Flag each as **build it** (cheap, minutes, clearly implied by the prompt) or **mention it** (real risk, but not worth the build time or not implied by this specific prompt) — don't blanket-apply the whole list to every prompt, that's scope creep in the other direction. Doing this scan *before* coding is what lets a handful of these become one-line changes instead of a rewrite discovered mid-build.
+
+- **Single point of failure** — one FastAPI process, one Postgres instance, one Redis instance. You cannot build real HA in 2 hours. **Mention it**: the app is already stateless (no in-memory session state) so horizontal scaling behind a load balancer is a config change, not a rewrite; managed Postgres/Redis with failover (e.g. DO Managed Databases) is the production answer for the DB/cache tier. Don't let this become a build task.
+- **Spiky/bursty traffic on a specific endpoint** — identify which one the prompt actually implies (a share link going viral, a vote endpoint during a live event, a signup rush). If there is a genuinely hot endpoint, **build it**: rate limiting (a `Decorator`-pattern check, in-memory token bucket or Redis-backed if you need it shared across instances — ~10-15 min) and make sure that endpoint's read path is the one covered by the cache-aside in §4. If the prompt has no obviously spike-prone endpoint, **mention it** generically per §3 instead of building speculative rate limiting everywhere.
+- **Race conditions on writes** — two requests racing to claim a unique value (short code, username), double-vote, double-booking, a read-modify-write counter increment. **Build it** wherever the prompt has one of these (they're usually cheap: a DB unique constraint + handling the conflict, or an atomic `UPDATE ... SET count = count + 1` instead of read-then-write) — this is a correctness bug waiting to be found live, not just a scaling nicety.
+- **Unbounded list growth / no pagination** — a `list()` endpoint with no limit gets slow and is an easy "what happens at 1M rows" question. **Build it** if listing is a real feature of the prompt: basic `limit`/`offset` or cursor pagination, cheap to add up front, expensive-looking to bolt on live after the interviewer asks.
+- **Missing index on an obvious query pattern** — any lookup that isn't by primary key (e.g. lookup by owner, by code, by status). **Build it**: one `CREATE INDEX` line costs nothing and preempts the "how would you scale the DB" question actually being a real problem in your own code.
+- **Trusting client input for anything identity/consistency-relevant** — client-supplied IDs, prices, ownership fields. **Build it**: generate/validate server-side (the scaffold already does this — `Item.id` is server-generated, request models never accept it).
+- **No idempotency on retryable writes** — a POST that a flaky client/network might resend, creating duplicates. **Build it** only where the prompt implies retries matter (payments, order creation); otherwise **mention it** per §3.
+- **Cache/DB divergence** — a cache with no invalidation path on writes. Already handled by the scaffold's `Cache.invalidate` in §4; if you add more cached reads, carry the same write-through invalidation, don't rely on TTL alone.
+
+If the prompt is small (a simple CRUD tool with none of the above genuinely in play), say so explicitly, keep the design simple, and skip straight to §4 — don't invent structure or mitigations the app doesn't need just to look thorough.
 
 ## 2. LLD: SOLID/DRY + patterns, applied pragmatically
 
@@ -796,7 +812,7 @@ Being transparent that you're using Cursor's AI features deliberately (Tab for b
 ## 6. Orchestration checklist (run through this during the actual build)
 
 1. **Read the prompt** — restate core entities/actions in 1-2 sentences, name the time budget and phase breakdown (§0) out loud.
-2. **Design (~10 min)** — §1: batch questions, sketch the architecture, state non-goals. Stop as soon as you have it; don't iterate the diagram.
+2. **Design (~10 min)** — §1: batch questions, sketch the simplest architecture that satisfies them, state goals/non-goals, run the pitfall scan and mark each item build-it or mention-it. Stop as soon as you have it; don't iterate the diagram.
 3. **Scaffold (~5 min)** — §4: copy files in, start Postgres+Redis, get both dev servers running before writing custom code. Confirm `/health` and the frontend root both load — catching a broken toolchain now costs 2 minutes, at minute 90 it costs the interview.
 4. **Backend (~45-50 min)** — §4.20 adapt pass + §2 pattern judgment. Run tests as you finish each endpoint, not all at the end. Checkpoint: by the midpoint, core flows reachable via `curl`/`/docs` even before the frontend exists.
 5. **Frontend (~30-40 min)** — golden path > loading/error > (no) polish, per §0's zero-CSS rule.
