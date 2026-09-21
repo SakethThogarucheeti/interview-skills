@@ -43,7 +43,7 @@ The templates model one generic `Item` entity with full CRUD. Adapting is a rena
 3. **`backend/app/service.py`** — this is where the prompt's actual business rules live (uniqueness checks, state transitions, computed fields). Keep it depending only on the repository Protocol and the `Cache` wrapper, never on `psycopg`/`redis` directly. Adjust or drop the cache-aside call on `get_item` if the prompt's read pattern doesn't warrant it (§3 of `hld-interview-design` — cache the actual hot path, not every read by default).
 4. **`backend/app/main.py`** — rename routes/paths to match the resource, add any non-CRUD endpoints the prompt needs (e.g. `GET /r/{code}` for a redirect, `POST /polls/{id}/vote`).
 5. **`frontend/src/api.js`** — rename the client methods to match the renamed endpoints.
-6. **`frontend/src/App.jsx`** — replace the generic list/create UI with whatever view the prompt actually needs. Keep the same data-fetching shape (`useEffect` + refresh function) unless the prompt needs something structurally different (e.g. a redirect page, a live-updating poll result).
+6. **`frontend/src/App.jsx`** — replace the generic list/create UI with whatever view the prompt actually needs. Keep the same data-fetching shape (`useEffect` + refresh function) unless the prompt needs something structurally different (e.g. a redirect page, a live-updating poll result). Keep the existing inline styles as-is — don't add a stylesheet, CSS framework, or spend time on visual design; see `interview-rapid-build`'s zero-CSS rule.
 
 ## 2. What NOT to change unless the prompt requires it
 

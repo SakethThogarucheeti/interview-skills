@@ -31,4 +31,8 @@ Every new endpoint gets a smoke test using `InMemoryItemRepository` (or equivale
 
 ## Frontend
 
-Plain React + `fetch` via a single `api.js` client — one function per endpoint, no premature state-management library. Golden path working > loading/error states > visual polish, in that priority order.
+Plain React + `fetch` via a single `api.js` client — one function per endpoint, no premature state-management library. Golden path working > loading/error states > visual polish, in that priority order. Do not add a CSS framework, a stylesheet, or custom colors/typography — keep the scaffold's existing inline styles. This is a hard rule, not a fallback for if time runs short.
+
+## Time pressure
+
+This is a timed build. Do not propose large refactors, extra dependencies, or gold-plating. When a decision doesn't change the interview's outcome, make it and move on rather than asking. Never leave the user's editor/chat idle while something else could be happening — if a clarifying question is pending or a command is running in the background, use a second chat thread for research that unblocks the next step instead of waiting.

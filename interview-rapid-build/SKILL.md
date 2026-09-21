@@ -7,6 +7,15 @@ description: End-to-end orchestrator for a timed "build a full-stack app in ~2 h
 
 You are pairing with the user to *prepare for and rehearse* a live, timed interview — the actual build happens in Cursor (see `cursor-interview-workflow`), so treat sessions here as either a full dry run or prep work (scaffold refinement, Q&A rehearsal) ahead of the real thing. Optimize for: something working and demoable by the end, a codebase that looks deliberately structured on a skim, and the user having sharp, ready answers for scaling/reliability questions — in that priority order. A brilliant architecture that isn't running loses to a plain CRUD app that works and whose author can clearly explain how they'd scale it.
 
+## Time-compression tactics (apply throughout, not just once)
+
+The real enemy in a 2-hour window is idle/serial time, not typing speed. Apply these at every step below, not just when they're called out:
+
+- **Never block on a single open question.** If something is unclear, batch every clarifying question you have into one shot (one message, or one round of Cursor chat) instead of a back-and-forth — each round trip costs wall-clock time waiting on a human, and most requirements questions are independent of each other so there's no reason to serialize them.
+- **Use dead time for research, not idling.** The moment you've asked a clarifying question (or kicked off a slow command — `docker compose up`, `npm install`, a migration), that wait is dead time unless you fill it. Fire off a parallel background task to do something useful with it: look up the exact library API/syntax you're about to need, check a GitHub reference implementation for a pattern you're unsure of, or pre-draft the next file you'll write once the answer/install lands. In this session that means launching a `fork`/background Agent call in the *same turn* as the clarifying question, not after the answer comes back. In Cursor during the live interview, that's a second chat tab or Background Agent doing research while the main thread waits on the interviewer or a build — see `cursor-interview-workflow`'s dead-time section.
+- **Decide, don't deliberate.** Every design/library/naming choice that doesn't change the interview's outcome (which UUID library, which HTTP status code convention) should be made instantly with a reasonable default, not surfaced as a question. Reserve actual questions for things that change scope or that only the user/interviewer can answer (e.g. "should deleted items be recoverable" if the prompt is ambiguous).
+- **Zero visual design time.** No CSS framework, no custom stylesheet, no color/spacing decisions beyond what's already in the scaffold's inline styles. This is explicit, not just a fallback if time runs short — see step 4.
+
 ## 0. Read the prompt, state the plan, start the clock
 
 The moment the user shares the problem statement:
@@ -17,7 +26,7 @@ The moment the user shares the problem statement:
 ## 1. Design phase (~10 min)
 
 Invoke `hld-interview-design`. Concretely, produce:
-- A one-paragraph statement of core entities, read/write ratio, and consistency requirements (its §1).
+- A one-paragraph statement of core entities, read/write ratio, and consistency requirements (its §1) — gather every clarifying question this needs in one batch (see time-compression tactics above), not one at a time.
 - The "one box, clean seams" architecture sketch (its §2) — adapt the generic diagram to the actual prompt's boxes.
 - Explicit non-goals stated out loud, so scope is deliberate.
 
@@ -38,11 +47,11 @@ Checkpoint: by the time-budget midpoint, the backend's core CRUD/flows should be
 
 ## 4. Frontend build (~30-40 min)
 
-Adapt `App.jsx`/`api.js` per the scaffold skill's §1. Priorities in order: golden path working end-to-end in the browser > loading/error states > visual polish. A plain-but-functional UI beats a half-built styled one every time in this format — do not spend interview time on CSS beyond basic legibility unless everything else is done early.
+Adapt `App.jsx`/`api.js` per the scaffold skill's §1. Priorities in order: golden path working end-to-end in the browser > loading/error states > visual polish — and don't reorder this even under time pressure. CSS is explicitly out of scope: keep the scaffold's existing inline styles (max-width container, basic spacing) and don't add a stylesheet, a CSS framework, or custom colors/typography, even if time remains at the end. Time saved on styling goes to a second entity/feature, better error handling, or more rehearsal of the scaling talking points — all of which score higher than visual polish in this format.
 
 ## 5. Prep the verbal defense (~10-15 min, can overlap with polish)
 
-Before time runs out, make sure the user can answer — without improvising from zero — the questions in `hld-interview-design` §3: traffic spikes, caching, DB scaling, consistency/race conditions, reliability, deployment/monitoring. Ground every answer in the actual code just written (name the real seam — "swap `InMemoryItemRepository` for `SqliteItemRepository` here", "this `ItemService.create_item` is where I'd add the idempotency check") rather than generic system-design vocabulary. Concrete beats generic every time an interviewer probes.
+Before time runs out, make sure the user can answer — without improvising from zero — the questions in `hld-interview-design` §3: traffic spikes, caching, DB scaling, consistency/race conditions, reliability, deployment/monitoring. Ground every answer in the actual code just written (name the real seam — "swap `InMemoryItemRepository` for `PostgresItemRepository` here", "this `ItemService.create_item` is where I'd add the idempotency check") rather than generic system-design vocabulary. Concrete beats generic every time an interviewer probes.
 
 ## 6. Final pass (last ~10 min)
 
@@ -53,5 +62,6 @@ Before time runs out, make sure the user can answer — without improvising from
 ## Boundaries
 
 - Don't let architecture discussion eat backend/frontend time — if design is running long, say "let's lock this in and adjust as we build" and move.
-- Don't introduce infrastructure (real Redis, real message queues, Docker Compose orchestration, CI) unless the prompt or interviewer explicitly asks for it live — these are talking points (`hld-interview-design` §3), not build tasks, in a 2-hour window.
+- Don't introduce infrastructure (real message queues, Kubernetes, CI) unless the prompt or interviewer explicitly asks for it live — these are talking points (`hld-interview-design` §3), not build tasks, in a 2-hour window. Postgres + Redis are the exception — they're already provisioned by the scaffold from minute one, not something to add later.
 - If the user is behind schedule at a checkpoint, cut scope (fewer entity fields, fewer endpoints, simpler UI) before cutting the layering/testing habits — a smaller well-structured app outscores a larger messy one.
+- Don't ask clarifying questions serially, and don't let the wait on an answer be pure idle time — see the time-compression tactics above.

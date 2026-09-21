@@ -20,7 +20,9 @@ If you're still drawing boxes at minute 15, you're over-designing. Collapse to t
 
 ## 1. Clarify requirements out loud (2-3 minutes)
 
-Ask or state assumptions for:
+Ask every open question at once, in one batch, rather than one at a time — a back-and-forth burns wall-clock time you don't get back, and most of these are independent of each other. Where a question doesn't actually change scope or architecture, skip asking and just state the reasonable assumption out loud instead of waiting on it.
+
+Cover:
 - **Core entities & actions**: what does the user create/read/update/delete? (e.g. for a URL shortener: create short link, redirect, view stats)
 - **Read vs write ratio**: most interview prompts (shorteners, polls, chat, task boards, rate limiters, notification systems) are read-heavy or write-bursty — say which out loud, it drives your caching/scaling story.
 - **Consistency requirement**: does this need to be strongly consistent (payments, inventory) or is eventual consistency fine (view counts, feeds, likes)? Most interview prompts tolerate eventual consistency — say so, it simplifies everything downstream.

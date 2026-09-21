@@ -30,12 +30,21 @@ That file (`alwaysApply: true`) encodes the same architecture/layering/stack con
 
 **Checkpoints / diff review** — after any Agent multi-file edit, skim the changed-files list before moving on. This is the one habit most worth keeping even when rushed: an unreviewed bad multi-file edit costs far more time to debug later than the 20 seconds to skim it now.
 
-## 3. What NOT to reach for live
+## 3. Use dead time: parallelize research instead of idling
+
+Any time you're blocked on something other than typing — waiting for the interviewer to answer a clarifying question, `docker compose up` pulling images, `npm install`, a migration running — that time is wasted unless something else productive is happening in it. Don't just sit on the blocked thread:
+
+- **Open a second chat tab (or use Background Agent if your Cursor plan has it) the moment you ask a clarifying question**, and use it to research whatever you'll need next regardless of the answer: the exact syntax for a library call you're about to make, a reference implementation pattern on GitHub for the entity you're building, the right FastAPI/psycopg idiom for a query you haven't written yet. Don't wait for the answer to come back before starting this — fire both at once.
+- **Batch clarifying questions** (see `interview-rapid-build`'s time-compression section) so you're not creating a new blocked-and-idle moment every few minutes. One batch of questions early, not a drip of them throughout.
+- **Queue the next file while a slow command runs.** If `npm install` or a container pull is running, use that window to write/adapt the next file by hand or via Cmd+K rather than watching the terminal — line up work so the install finishing and you being ready to test coincide.
+- **Don't let research become its own rabbit hole.** The research thread's job is to unblock the next few minutes of typing, not to produce a comprehensive answer — pull the one fact you need (an API signature, a snippet) and get back to building. If a lookup is taking longer than the thing it was supposed to save time on, abandon it and make a reasonable call instead.
+
+## 4. What NOT to reach for live
 
 - Don't hand-tune Cursor settings/models mid-interview — pick a model once at the start (favor a fast, capable default) and move on.
 - Don't use Agent mode for large open-ended asks ("build the whole backend") without first giving it the specific layering/entity — an unscoped prompt produces generic CRUD that then needs a second pass to align with the conventions, costing more net time than scoping it correctly once.
 - Don't fight Tab's suggestions into submission for stylistic preferences that don't matter (quote style, minor formatting) — accept-and-move-on beats a perfect diff in this format.
 
-## 4. Talking to the interviewer about tool use
+## 5. Talking to the interviewer about tool use
 
 If asked about your workflow/tools during the interview, it's fair and often a positive signal to be transparent that you're using Cursor's AI features deliberately (Tab for boilerplate, Agent for scoped multi-file changes) rather than writing everything by hand — the interesting signal for them is whether *you* made the architecture and pattern decisions (which this skill set prepared you to explain clearly, see `hld-interview-design` §3) while the tool accelerated typing, not whether the tool designed the system.
