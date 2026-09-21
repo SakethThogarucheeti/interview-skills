@@ -1,6 +1,6 @@
 ---
 name: interview-kit
-description: Single self-contained kit for a timed "build a full-stack app in ~2 hours" interview (e.g. DigitalOcean's format) — covers requirements/goal-scoping and a pitfall scan (single points of failure, spiky-traffic tradeoffs, race conditions, missing indexes/pagination) run during the design phase itself, HLD talking points for scaling/reliability follow-ups, SOLID/DRY/GoF LLD patterns, a complete copy-paste FastAPI+Postgres+Redis+React scaffold (every file inlined below), a Cursor workflow section (the interview runs in Cursor, not here), and time-compression tactics throughout. Use as soon as the user shares the interview prompt and wants to start building, asks about system design/scaling questions for this interview, wants the scaffold code, or asks about using Cursor for it. Everything needed lives in this one file — no other skill or template directory required.
+description: Single self-contained kit for a timed "build a full-stack app in ~2 hours" interview (e.g. DigitalOcean's format). Always asks a batched round of clarifying questions and waits for an answer before any implementation begins — then covers requirements/goal-scoping and a pitfall scan (single points of failure, spiky-traffic tradeoffs, race conditions, missing indexes/pagination) run during the design phase itself, HLD talking points for scaling/reliability follow-ups, SOLID/DRY/GoF LLD patterns, a complete copy-paste FastAPI+Postgres+Redis+React scaffold (every file inlined below), a Cursor workflow section (the interview runs in Cursor, not here), and time-compression tactics throughout. Use as soon as the user shares the interview prompt and wants to start building, asks about system design/scaling questions for this interview, wants the scaffold code, or asks about using Cursor for it. Everything needed lives in this one file — no other skill or template directory required.
 ---
 
 # Interview kit — 2-hour full-stack build
@@ -13,15 +13,17 @@ Prep/rehearse here; the actual build runs in Cursor (§5) unless told otherwise.
 
 The real enemy in a 2-hour window is idle/serial time, not typing speed.
 
-- **Batch every clarifying question into one shot** — most are independent, don't serialize them.
-- **Use dead time for research, never idle.** The instant a question is pending or a slow command is running (`docker compose up`, `npm install`), fire a parallel task to look up what you'll need next — don't wait for the answer to start it. Claude Code: a `fork`/background Agent in the same turn as the question. Cursor: a second chat tab or Background Agent (§5.3).
+- **Ask before building, always.** Clarifying questions (§1) are a hard gate, not optional politeness — batch them into one shot and wait for the answer before starting any implementation. This doesn't conflict with speed: batching means one round trip, not zero.
+- **Use dead time for research while you wait, never idle.** Once the question is asked, that wait is dead time unless filled. Fire a parallel task to look up what you'll need next — don't wait for the answer to start it. Claude Code: a `fork`/background Agent in the same turn as the question. Cursor: a second chat tab or Background Agent (§5.3). This fills the wait; it doesn't replace it — still don't start implementing on an assumed answer.
 - **Decide, don't deliberate.** Default any choice that doesn't change the outcome; only ask what changes scope.
 - **Zero CSS.** No framework, no stylesheet, nothing beyond the scaffold's inline styles — hard rule from the start, not a fallback. Spend saved time on a feature or on defense rehearsal instead.
 - **Budget** (2h, adjust as told): ~10 min design (§1), ~5 min scaffold copy-in (§4), ~45-50 min backend, ~30-40 min frontend, ~15-20 min polish + defense (§3), buffer.
 
 ## 1. Requirements & HLD (~10 min, don't exceed)
 
-Batch every open question; skip anything that doesn't change scope and just state the assumption. Output: a short, explicit statement of goals and non-goals — a decision to hold the build to, not just gathered info. Cover:
+**Hard gate: ask before building.** The moment the prompt is shared, ask the batch of clarifying questions below in a single message and stop — do not scaffold, write code, or touch §4 until the user answers or explicitly says to use your judgment/defaults. This is a real stop, not a rhetorical one: no implementation work happens between asking and getting a response. Use the dead-time tactic (§0) to do something useful *while waiting* (research, pre-reading this file's scaffold section), but don't start building on assumed answers. Only skip asking outright if the user's own prompt already answered a question — don't re-ask what they already told you.
+
+Batch every open question; skip asking only what doesn't change scope, and state that assumption explicitly instead. Output: a short, explicit statement of goals and non-goals — a decision to hold the build to, not just gathered info. Cover:
 - **Core entities & actions** — create/read/update/delete what?
 - **Read vs write ratio** — most prompts (shorteners, polls, task boards, rate limiters) are read-heavy or write-bursty; name which, it drives the caching story.
 - **Consistency** — strong (payments, inventory) or eventual (counts, feeds, likes)? Most prompts tolerate eventual — say so, it simplifies everything downstream.
@@ -810,11 +812,12 @@ Being transparent that you're using Cursor's AI deliberately (Tab for boilerplat
 ## 6. Orchestration checklist
 
 1. **Read the prompt** — restate entities/actions in 1-2 sentences, name the time budget/phases (§0) out loud.
-2. **Design (~10 min)** — §1: batch questions, sketch the simplest architecture, state goals/non-goals, run the pitfall scan. Stop as soon as you have it.
-3. **Scaffold (~5 min)** — §4: copy files in, start Postgres+Redis, get both dev servers running before writing custom code. Confirm `/health` and the frontend root load — catching a broken toolchain now costs 2 minutes, at minute 90 it costs the interview.
-4. **Backend (~45-50 min)** — §4.20 adapt pass + §2 judgment. Test each endpoint as you finish it. Checkpoint: by the midpoint, core flows reachable via `curl`/`/docs` even before the frontend exists.
-5. **Frontend (~30-40 min)** — golden path > loading/error > (no) polish, per §0's zero-CSS rule.
-6. **Defense prep (~10-15 min, can overlap)** — §3's answers ready, grounded in the code just written.
-7. **Final pass (~10 min)** — exercise the golden path in the browser, confirm both servers start clean from a fresh terminal, have a one-sentence close ready: what's built, what's out of scope and why, first three next steps.
+2. **Ask, then stop** — §1's batch of clarifying questions, in one shot. Wait for the answer (or explicit "use your judgment") before doing anything below — this is a hard gate, not a formality.
+3. **Design (~10 min from here)** — §1: sketch the simplest architecture, state goals/non-goals, run the pitfall scan. Stop as soon as you have it.
+4. **Scaffold (~5 min)** — §4: copy files in, start Postgres+Redis, get both dev servers running before writing custom code. Confirm `/health` and the frontend root load — catching a broken toolchain now costs 2 minutes, at minute 90 it costs the interview.
+5. **Backend (~45-50 min)** — §4.20 adapt pass + §2 judgment. Test each endpoint as you finish it. Checkpoint: by the midpoint, core flows reachable via `curl`/`/docs` even before the frontend exists.
+6. **Frontend (~30-40 min)** — golden path > loading/error > (no) polish, per §0's zero-CSS rule.
+7. **Defense prep (~10-15 min, can overlap)** — §3's answers ready, grounded in the code just written.
+8. **Final pass (~10 min)** — exercise the golden path in the browser, confirm both servers start clean from a fresh terminal, have a one-sentence close ready: what's built, what's out of scope and why, first three next steps.
 
 **Boundaries**: don't let architecture discussion eat build time — lock it in and adjust as you build. Don't introduce infrastructure beyond Postgres+Redis unless asked live. If behind schedule, cut scope before cutting layering/testing habits — a smaller well-structured app outscores a larger messy one.
