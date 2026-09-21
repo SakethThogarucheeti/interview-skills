@@ -22,6 +22,7 @@ The real enemy in a 3-hour window is idle/serial time, not typing speed — and 
 - **Decide, don't deliberate.** Default any choice that doesn't change the outcome; only ask what changes scope.
 - **Every command gets a timeout, and every long-running one logs to a file.** A hung command with no timeout silently eats the clock; a slow one with no log forces you to sit and watch it instead of doing something else. Wrap anything that could hang (installs, network/DB calls) in a timeout; run anything backgrounded (`uvicorn`, `npm run dev`, `docker compose up`) redirected to a log file (`... > /tmp/uvicorn.log 2>&1 &`) so progress is checkable with `tail`/`grep` instead of blocking on it. Scope greps/finds to the relevant directory (`grep -r pattern app/`, not the repo root) — an unscoped search that crawls `node_modules`/`.venv`/`.git` wastes real time for zero signal.
 - **Zero CSS.** No framework, no stylesheet, nothing beyond the scaffold's inline styles — hard rule from the start, not a fallback. Spend saved time on a feature or on defense rehearsal instead.
+- **Use git, and commit at every milestone and every passing test.** `git init` before the scaffold goes in (§4.19), then a commit after: scaffold copied in and both servers up, each §4.20 file adapted, every passing `test_smoke.py` run, backend done, frontend done, and deployed (§4.21) — small, frequent commits, not one giant commit at the end. This is what makes a bad edit or a tool going sideways a `git diff`/`git checkout` away instead of a rebuild, and a clean commit history is itself evidence of a deliberate, checkpointed process if it comes up.
 - **Budget** (3h default — this is DigitalOcean's confirmed format, adjust if told otherwise): ~5 min pick the assigned prompt (§1), ~10 min design (§1), ~5 min scaffold copy-in (§4), ~50-60 min backend, ~30-40 min frontend, ~20 min deploy to DigitalOcean — required, not optional (§4.21), ~20 min polish + defense prep (§3), buffer.
 
 ## 1. Requirements & HLD (~10 min, don't exceed)
@@ -751,6 +752,7 @@ export default function App() {
 ### 4.19 Setup commands
 
 ```bash
+git init && git add -A && git commit -m "Scaffold from interview-kit"
 cd backend && timeout 120 python -m venv .venv && source .venv/bin/activate \
   && timeout 180 pip install -r requirements.txt > /tmp/pip-install.log 2>&1
 cd ../frontend && timeout 180 npm install > /tmp/npm-install.log 2>&1
@@ -880,6 +882,11 @@ dev, docker compose) redirects output to a log file so progress is
 checkable with tail/grep instead of blocking on it. Scope greps/finds to
 the relevant directory, never the whole repo root -- crawling
 node_modules/.venv/.git wastes time for zero signal.
+
+Use git. Init the repo before the scaffold goes in, then commit at every
+milestone and every passing test -- scaffold in, each adapted file, each
+green test run, backend done, frontend done, deployed. Small frequent
+commits, not one commit at the end.
 ```
 
 Pre-stage the §4 scaffold files too if the format allows a personal template repo (confirm with the interviewer first); if not, recreate the structure quickly from this file — the layering should be a habit going in, not looked up live.
@@ -910,10 +917,10 @@ Being transparent that you're using Cursor's AI deliberately (Tab for boilerplat
 2. **Read the prompt** — restate entities/actions in 1-2 sentences, name the time budget/phases (§0) out loud.
 3. **Ask once, then stop asking** — §1's batch of clarifying questions, in one shot. Wait for the answer (or explicit "use your judgment") before doing anything below — a real gate, not a formality — then don't reopen it; decide any remaining gaps yourself and move on.
 4. **Design (~10 min from here)** — §1: sketch the simplest architecture, state goals/non-goals, run the pitfall scan. The moment this is locked in, spawn the background subagent that writes `design-decisions.md` (§1's last subsection) — don't wait for it, move straight into scaffolding (next step).
-5. **Scaffold (~5 min)** — §4: copy files in, start Postgres+Redis, get both dev servers running before writing custom code. Confirm `/health` and the frontend root load — catching a broken toolchain now costs 2 minutes, at minute 90 it costs the interview.
-6. **Backend (~50-60 min)** — §4.20 adapt pass + §2 judgment. Test each endpoint as you finish it. Before accepting any AI-generated chunk, re-check it against §1's pitfall table, especially the write-race and blocking-call rows — that check is what's graded. Checkpoint: by the midpoint, core flows reachable via `curl`/`/docs` even before the frontend exists.
-7. **Frontend (~30-40 min)** — golden path > loading/error > (no) polish, per §0's zero-CSS rule.
-8. **Deploy (~20 min, required)** — §4.21: get it live on DigitalOcean, verify `/health` and one real request from outside your machine before moving on. Don't leave this for "if there's time" — it's a stated requirement of the format, not a bonus.
+5. **Scaffold (~5 min)** — §4: `git init` + commit (§4.19), copy files in, start Postgres+Redis, get both dev servers running before writing custom code. Confirm `/health` and the frontend root load — catching a broken toolchain now costs 2 minutes, at minute 90 it costs the interview. Commit once this all works.
+6. **Backend (~50-60 min)** — §4.20 adapt pass + §2 judgment. Test each endpoint as you finish it. Before accepting any AI-generated chunk, re-check it against §1's pitfall table, especially the write-race and blocking-call rows — that check is what's graded. Commit after each adapted file and after every passing `test_smoke.py` run, not just once at the end. Checkpoint: by the midpoint, core flows reachable via `curl`/`/docs` even before the frontend exists.
+7. **Frontend (~30-40 min)** — golden path > loading/error > (no) polish, per §0's zero-CSS rule. Commit once the golden path works end-to-end.
+8. **Deploy (~20 min, required)** — §4.21: get it live on DigitalOcean, verify `/health` and one real request from outside your machine before moving on. Don't leave this for "if there's time" — it's a stated requirement of the format, not a bonus. Commit once verified live.
 9. **Defense prep (~15-20 min, can overlap with deploy waiting on DNS/build)** — refresh `design-decisions.md` against what actually got built (a quick edit pass, not a rewrite), then read through it — that's the user's actual prep, since the user is who answers the walkthrough questions, not the agent.
 10. **Final pass (~10 min)** — exercise the golden path against the deployed URL (not just localhost), confirm both servers start clean from a fresh terminal, have a one-sentence close ready: what's built, what's out of scope and why, first three next steps.
 
