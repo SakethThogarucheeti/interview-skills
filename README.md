@@ -32,6 +32,6 @@ or work from inside this repo where it's picked up as a project skill.
 For the interview itself: read section 5 (Cursor workflow) ahead of time and
 stage `.cursor/rules/interview-conventions.mdc` plus the section 4 scaffold
 files into your starting project before the clock starts. Also make sure
-`doctl` is installed and authenticated (`doctl auth init`) beforehand —
-section 4.21 assumes it's ready to go, since setting up auth mid-session
-eats into the deploy budget.
+`doctl` is installed and authenticated (`doctl auth init`), and `uv`
+(the scaffold's venv/dependency manager, section 4.19/4.21) is installed,
+beforehand — setting either up mid-session eats into the build/deploy budget.

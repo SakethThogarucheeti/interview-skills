@@ -177,7 +177,7 @@ redis>=5.0
 FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir uv && uv pip install --system --no-cache -r requirements.txt
 COPY . .
 EXPOSE 8000
 # DATABASE_URL / REDIS_URL default to localhost in app/deps.py -- override with
@@ -760,8 +760,8 @@ __pycache__/
 .env
 EOF
 git init && git add -A && git commit -m "Scaffold from interview-kit"
-cd backend && timeout 120 python -m venv .venv && source .venv/bin/activate \
-  && timeout 180 pip install -r requirements.txt > /tmp/pip-install.log 2>&1
+cd backend && timeout 60 uv venv .venv && source .venv/bin/activate \
+  && timeout 180 uv pip install -r requirements.txt > /tmp/uv-install.log 2>&1
 cd ../frontend && timeout 180 npm install > /tmp/npm-install.log 2>&1
 ```
 Then, all backgrounded/parallel, each logged so progress is checkable without blocking:
@@ -890,6 +890,10 @@ Use git. Add a .gitignore (.venv/, node_modules/, __pycache__/, *.pyc, .env)
 before the first commit, then commit at every milestone and every passing
 test -- scaffold in, each adapted file, each green test run, backend done,
 frontend done, deployed. Small frequent commits, not one at the end.
+
+Python deps and venv: uv only (uv venv, uv pip install) -- never bare pip or
+python -m venv. It's already installed and drastically faster under time
+pressure.
 ```
 
 Pre-stage the §4 scaffold files too if the format allows a personal template repo (confirm with the interviewer first); if not, recreate the structure quickly from this file — the layering should be a habit going in, not looked up live.
