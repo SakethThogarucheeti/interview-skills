@@ -20,6 +20,7 @@ The real enemy in a 3-hour window is idle/serial time, not typing speed — and 
 - **Ask once, then commit.** Clarifying questions (§1) are a hard gate, not optional politeness — batch them into one shot and wait for the answer before starting any implementation. But it's one gate, not a habit: once answered, decide every remaining gap yourself and build — don't open a second round out of caution, that's slower and reads as indecisive, not careful.
 - **Use dead time for research while you wait, never idle.** Once the question is asked, that wait is dead time unless filled. Fire a parallel task to look up what you'll need next — don't wait for the answer to start it. Claude Code: a `fork`/background Agent in the same turn as the question. Cursor: a second chat tab or Background Agent (§5.3). This fills the wait; it doesn't replace it — still don't start implementing on an assumed answer.
 - **Decide, don't deliberate.** Default any choice that doesn't change the outcome; only ask what changes scope.
+- **Every command gets a timeout, and every long-running one logs to a file.** A hung command with no timeout silently eats the clock; a slow one with no log forces you to sit and watch it instead of doing something else. Wrap anything that could hang (installs, network/DB calls) in a timeout; run anything backgrounded (`uvicorn`, `npm run dev`, `docker compose up`) redirected to a log file (`... > /tmp/uvicorn.log 2>&1 &`) so progress is checkable with `tail`/`grep` instead of blocking on it. Scope greps/finds to the relevant directory (`grep -r pattern app/`, not the repo root) — an unscoped search that crawls `node_modules`/`.venv`/`.git` wastes real time for zero signal.
 - **Zero CSS.** No framework, no stylesheet, nothing beyond the scaffold's inline styles — hard rule from the start, not a fallback. Spend saved time on a feature or on defense rehearsal instead.
 - **Budget** (3h default — this is DigitalOcean's confirmed format, adjust if told otherwise): ~5 min pick the assigned prompt (§1), ~10 min design (§1), ~5 min scaffold copy-in (§4), ~50-60 min backend, ~30-40 min frontend, ~20 min deploy to DigitalOcean — required, not optional (§4.21), ~20 min polish + defense prep (§3), buffer.
 
@@ -750,18 +751,19 @@ export default function App() {
 ### 4.19 Setup commands
 
 ```bash
-cd backend && python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
-cd ../frontend && npm install
+cd backend && timeout 120 python -m venv .venv && source .venv/bin/activate \
+  && timeout 180 pip install -r requirements.txt > /tmp/pip-install.log 2>&1
+cd ../frontend && timeout 180 npm install > /tmp/npm-install.log 2>&1
 ```
-Then, all backgrounded/parallel:
+Then, all backgrounded/parallel, each logged so progress is checkable without blocking:
 ```bash
 # from backend/
-docker compose up -d          # postgres:5432, redis:6379
-uvicorn app.main:app --reload --port 8000
+docker compose up -d          # postgres:5432, redis:6379 -- already detached, no log needed
+uvicorn app.main:app --reload --port 8000 > /tmp/uvicorn.log 2>&1 &
 # from frontend/
-npm run dev
+npm run dev > /tmp/vite.log 2>&1 &
 ```
-If Docker isn't available, point `DATABASE_URL`/`REDIS_URL` env vars (see `deps.py`) at whatever Postgres/Redis instance is provided instead.
+Check readiness with `tail -f /tmp/uvicorn.log` / `curl localhost:8000/health` instead of guessing when it's up. If Docker isn't available, point `DATABASE_URL`/`REDIS_URL` env vars (see `deps.py`) at whatever Postgres/Redis instance is provided instead.
 
 ### 4.20 Adapt to the actual prompt (rename-and-extend, not a rewrite)
 
@@ -782,13 +784,14 @@ DigitalOcean's own format requires the prototype live on their platform before t
 
 ```bash
 # One-time, from your local machine (doctl already authenticated: `doctl auth init`)
-doctl compute droplet create interview-app \
+timeout 300 doctl compute droplet create interview-app \
   --image docker-20-04 --size s-1vcpu-2gb --region nyc3 \
-  --ssh-keys <your-key-fingerprint> --wait --format ID,PublicIPv4
+  --ssh-keys <your-key-fingerprint> --wait --format ID,PublicIPv4 \
+  | tee /tmp/droplet-create.log
 
 # Ship the code (run from the project root)
-rsync -av --exclude node_modules --exclude .venv --exclude __pycache__ \
-  ./ root@<droplet-ip>:/root/app/
+timeout 120 rsync -av --exclude node_modules --exclude .venv --exclude __pycache__ \
+  ./ root@<droplet-ip>:/root/app/ > /tmp/rsync.log 2>&1
 ```
 
 Add the backend as a third service in `backend/docker-compose.yml` (append, don't replace the existing `postgres`/`redis` services):
@@ -805,9 +808,11 @@ Add the backend as a third service in `backend/docker-compose.yml` (append, don'
       - redis
 ```
 ```bash
-ssh root@<droplet-ip> "cd /root/app/backend && docker compose up -d --build"
-curl http://<droplet-ip>/health   # confirm {"status":"ok"} before calling it done
+timeout 240 ssh root@<droplet-ip> "cd /root/app/backend && docker compose up -d --build" \
+  > /tmp/deploy-build.log 2>&1
+timeout 10 curl http://<droplet-ip>/health   # confirm {"status":"ok"} before calling it done
 ```
+If the build is still running when the timeout hits, check progress with `cat /tmp/deploy-build.log` (or `ssh root@<droplet-ip> "docker compose logs --tail 50"`) rather than re-running the whole command blind.
 
 For the frontend, if the interviewer expects it live too: point `frontend/vite.config.js`'s API proxy target at `http://<droplet-ip>` and either run `npm run build` + serve the static output from the same Droplet (a tiny `nginx` or `serve` container added to the same compose file) or run it locally against the deployed API — confirm which is expected as part of §1's clarifying batch (already added there). A deployed-but-broken app is worse than skipping deployment, since it's the last thing the interviewer sees — always verify `/health` and one real request before moving to defense prep.
 
@@ -868,6 +873,13 @@ atomic DB statement, not read-then-write) and for a blocking sync call
 inside an async def (should not mix -- route handlers here are plain def
 on purpose so sync psycopg/redis calls are safe). Catching these two is
 reported to be specifically what's graded.
+
+Every command gets a timeout -- a hung install or network call should fail
+loud, not eat the clock silently. Anything backgrounded (uvicorn, npm run
+dev, docker compose) redirects output to a log file so progress is
+checkable with tail/grep instead of blocking on it. Scope greps/finds to
+the relevant directory, never the whole repo root -- crawling
+node_modules/.venv/.git wastes time for zero signal.
 ```
 
 Pre-stage the §4 scaffold files too if the format allows a personal template repo (confirm with the interviewer first); if not, recreate the structure quickly from this file — the layering should be a habit going in, not looked up live.
