@@ -170,6 +170,8 @@ python-multipart>=0.0.9
 psycopg[binary]>=3.2
 psycopg-pool>=3.2
 redis>=5.0
+pytest>=8.0
+httpx>=0.27
 ```
 
 ### 4.2 `backend/Dockerfile`
@@ -545,7 +547,7 @@ Empty file.
 
 ### 4.12 `backend/test_smoke.py`
 ```python
-# Minimal smoke test -- run with: APP_ENV=test pytest test_smoke.py
+# Minimal smoke test -- run with: APP_ENV=test uv run pytest test_smoke.py
 # APP_ENV=test makes deps.py hand out InMemoryItemRepository and no real cache,
 # so this runs with no Postgres/Redis needed.
 import os
@@ -760,15 +762,15 @@ __pycache__/
 .env
 EOF
 git init && git add -A && git commit -m "Scaffold from interview-kit"
-cd backend && timeout 60 uv venv .venv && source .venv/bin/activate \
+cd backend && timeout 60 uv venv .venv \
   && timeout 180 uv pip install -r requirements.txt > /tmp/uv-install.log 2>&1
 cd ../frontend && timeout 180 npm install > /tmp/npm-install.log 2>&1
 ```
-Then, all backgrounded/parallel, each logged so progress is checkable without blocking:
+Then, all backgrounded/parallel, each logged so progress is checkable without blocking. Use `uv run` (not `source .venv/bin/activate`) — activation doesn't survive into a new shell/tool call, `uv run` doesn't need it:
 ```bash
 # from backend/
 docker compose up -d          # postgres:5432, redis:6379 -- already detached, no log needed
-uvicorn app.main:app --reload --port 8000 > /tmp/uvicorn.log 2>&1 &
+uv run uvicorn app.main:app --reload --port 8000 > /tmp/uvicorn.log 2>&1 &
 # from frontend/
 npm run dev > /tmp/vite.log 2>&1 &
 ```
@@ -891,9 +893,10 @@ before the first commit, then commit at every milestone and every passing
 test -- scaffold in, each adapted file, each green test run, backend done,
 frontend done, deployed. Small frequent commits, not one at the end.
 
-Python deps and venv: uv only (uv venv, uv pip install) -- never bare pip or
-python -m venv. It's already installed and drastically faster under time
-pressure.
+Python deps and venv: uv only (uv venv, uv pip install, uv run) -- never bare
+pip, python -m venv, or `source .venv/bin/activate` (doesn't survive a new
+shell/tool call -- uv run doesn't need it). Already installed, drastically
+faster under time pressure.
 ```
 
 Pre-stage the §4 scaffold files too if the format allows a personal template repo (confirm with the interviewer first); if not, recreate the structure quickly from this file — the layering should be a habit going in, not looked up live.
