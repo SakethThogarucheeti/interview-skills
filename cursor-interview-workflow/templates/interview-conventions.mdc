@@ -1,0 +1,34 @@
+---
+description: Conventions for the timed full-stack interview build (architecture, layering, stack). Always apply.
+alwaysApply: true
+---
+
+# Interview build conventions
+
+This project is being built live, in a ~2-hour timed technical interview. Optimize every suggestion for: working code first, deliberate-looking structure second, minimal unnecessary typing third. Do not suggest large refactors, new dependencies, or infrastructure (message queues, Kubernetes, CI) unless explicitly asked — those are verbal talking points for the interviewer, not build tasks in this window.
+
+## Architecture
+
+Single FastAPI backend + single React (Vite) frontend, "one box, clean seams":
+`React SPA -> FastAPI -> Postgres`, with `Redis` for cache-aside on hot reads and optionally pub/sub for fan-out. No microservices, no message broker, no multi-region setup — those are the answer to "how would you scale this," not the starting build.
+
+## Backend layering (do not collapse this)
+
+- `app/main.py` — routes only: parse request, call a service method, return. No business logic, no direct DB/Redis calls here.
+- `app/service.py` — business logic and orchestration. Depends only on repository/cache Protocols, never on `psycopg`/`redis` directly (Dependency Inversion).
+- `app/repository.py` — the only place that talks to Postgres. One Protocol (interface) per entity plus a Postgres implementation and an in-memory test implementation.
+- `app/cache.py` / `app/events.py` — Redis cache-aside and pub/sub, wrapped so services never import `redis` directly.
+- `app/models.py` — Pydantic models: one domain model, one `*Create`, one `*Update` per entity. Never redefine a shape inline in a route.
+- `app/deps.py` — wiring only: which concrete repository/cache implementation gets used, selected by `APP_ENV`.
+
+## SOLID / DRY / patterns
+
+Apply the Repository pattern to every entity by default. Reach for Strategy, Factory, Observer, Decorator, or Adapter only when there are two genuinely interchangeable implementations to justify it (a second code-generation algorithm, a second notification channel, etc.) — do not add an interface "for future extensibility" with only one implementation. Prefer three similar lines over a premature abstraction.
+
+## Testing
+
+Every new endpoint gets a smoke test using `InMemoryItemRepository` (or equivalent) via `APP_ENV=test`, so tests never require live Postgres/Redis. Run tests incrementally as endpoints are built, not all at the end.
+
+## Frontend
+
+Plain React + `fetch` via a single `api.js` client — one function per endpoint, no premature state-management library. Golden path working > loading/error states > visual polish, in that priority order.
