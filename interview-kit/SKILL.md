@@ -1,25 +1,29 @@
 ---
 name: interview-kit
-description: Single self-contained kit for a timed "build a full-stack app in ~2 hours" interview (e.g. DigitalOcean's format). Always asks one batched round of clarifying questions and waits for an answer before any implementation begins, then commits and builds without reopening more question rounds — then covers requirements/goal-scoping and a pitfall scan (single points of failure, spiky-traffic tradeoffs, race conditions, missing indexes/pagination) run during the design phase itself, HLD talking points for scaling/reliability follow-ups, SOLID/DRY/GoF LLD patterns, a complete copy-paste FastAPI+Postgres+Redis+React scaffold (every file inlined below), a Cursor workflow section (the interview runs in Cursor, not here), and time-compression tactics throughout. Use as soon as the user shares the interview prompt and wants to start building, asks about system design/scaling questions for this interview, wants the scaffold code, or asks about using Cursor for it. Everything needed lives in this one file — no other skill or template directory required.
+description: Single self-contained kit for a timed "build and deploy a full-stack app" interview (DigitalOcean's confirmed format: 3 hours, pick from a short list of assigned prompts, must deploy live to DigitalOcean before time's up, graded partly on catching AI-introduced race conditions/blocking calls rather than trusting them). Always asks one batched round of clarifying questions and waits for an answer before any implementation begins, then commits and builds without reopening more question rounds — then covers requirements/goal-scoping and a pitfall scan (single points of failure, spiky-traffic tradeoffs, race conditions, blocking async calls, missing indexes/pagination) run during the design phase and re-run against every AI-generated diff, HLD talking points for scaling/reliability/business-tradeoff follow-ups, SOLID/DRY/GoF LLD patterns, a complete copy-paste FastAPI+Postgres+Redis+React scaffold (every file inlined below), a DigitalOcean deployment section, a Cursor workflow section (the interview runs in Cursor, not here), and time-compression tactics throughout. Use as soon as the user shares the interview prompt and wants to start building, asks about system design/scaling questions for this interview, wants the scaffold code, needs to deploy to DigitalOcean, or asks about using Cursor for it. Everything needed lives in this one file — no other skill or template directory required.
 ---
 
-# Interview kit — 2-hour full-stack build
+# Interview kit — timed full-stack build
 
-One file, no GitHub dependency: requirements → design → LLD → scaffold code (inlined below) → Cursor workflow → verbal defense.
+One file, no GitHub dependency: requirements → design → LLD → scaffold code (inlined below) → Cursor workflow → deployment → verbal defense.
 
-Prep/rehearse here; the actual build runs in Cursor (§5) unless told otherwise. Priority order: working demo > code that looks deliberately structured on a skim > sharp, ready answers to scaling/reliability questions. Working-but-plain beats brilliant-but-unfinished.
+Prep/rehearse here; the actual build runs in Cursor (§5) unless told otherwise. Priority order: working, **deployed** demo > code that looks deliberately structured on a skim > sharp, ready answers to scaling/reliability/business-tradeoff questions. Working-but-plain beats brilliant-but-unfinished, and undeployed beats nothing — DigitalOcean's own writeup on this format confirms the prototype must actually be live on their platform before time's up, not just running locally (§4.21).
+
+**What's actually graded** (per DigitalOcean's own hiring writeup, not guesswork): they watch *where* you rely on AI (boilerplate) vs. what you check/adjust by hand (concurrency controls, blocking calls) — and they deliberately pick prompts where a naive AI tool confidently generates flawed logic (race conditions, blocking network calls in an async path) specifically to see if you catch and fix it. Treat every block of AI-generated code as something to audit against §1's pitfall scan before accepting it — that audit *is* the interview, not a nice-to-have. Format: a **3-hour** session, candidates pick from a short list of assigned prompts, followed by a walkthrough of design choices/trade-offs and hypotheticals on scaling, traffic spikes, downtime, and business constraints.
 
 ## 0. Time-compression tactics (apply throughout)
 
-The real enemy in a 2-hour window is idle/serial time, not typing speed.
+The real enemy in a 3-hour window is idle/serial time, not typing speed — and now that a portion of that window has to include a working deployment, there's less slack than "3 hours" sounds like.
 
 - **Ask once, then commit.** Clarifying questions (§1) are a hard gate, not optional politeness — batch them into one shot and wait for the answer before starting any implementation. But it's one gate, not a habit: once answered, decide every remaining gap yourself and build — don't open a second round out of caution, that's slower and reads as indecisive, not careful.
 - **Use dead time for research while you wait, never idle.** Once the question is asked, that wait is dead time unless filled. Fire a parallel task to look up what you'll need next — don't wait for the answer to start it. Claude Code: a `fork`/background Agent in the same turn as the question. Cursor: a second chat tab or Background Agent (§5.3). This fills the wait; it doesn't replace it — still don't start implementing on an assumed answer.
 - **Decide, don't deliberate.** Default any choice that doesn't change the outcome; only ask what changes scope.
 - **Zero CSS.** No framework, no stylesheet, nothing beyond the scaffold's inline styles — hard rule from the start, not a fallback. Spend saved time on a feature or on defense rehearsal instead.
-- **Budget** (2h, adjust as told): ~10 min design (§1), ~5 min scaffold copy-in (§4), ~45-50 min backend, ~30-40 min frontend, ~15-20 min polish + defense (§3), buffer.
+- **Budget** (3h default — this is DigitalOcean's confirmed format, adjust if told otherwise): ~5 min pick the assigned prompt (§1), ~10 min design (§1), ~5 min scaffold copy-in (§4), ~50-60 min backend, ~30-40 min frontend, ~20 min deploy to DigitalOcean — required, not optional (§4.21), ~20 min polish + defense prep (§3), buffer.
 
 ## 1. Requirements & HLD (~10 min, don't exceed)
+
+**If given a short list of prompts to choose from, pick one first.** DigitalOcean's format hands candidates a small set of assigned prompts at session start. Prefer whichever matches a pattern you've prepped (§1's "Likely prompt patterns" below) or, failing that, whichever has the smallest, clearest scope — a prompt you can fully state in one sentence beats one with several ambiguous sub-features, because ambiguity here costs clarifying-question time you don't get back.
 
 **Hard gate: ask before building — once.** The moment the prompt is shared, ask the batch of clarifying questions below in a single message and stop — do not scaffold, write code, or touch §4 until the user answers or explicitly says to use your judgment/defaults. This is a real stop, not a rhetorical one: no implementation work happens between asking and getting a response. Use the dead-time tactic (§0) to do something useful *while waiting* (research, pre-reading this file's scaffold section), but don't start building on assumed answers. Only skip asking outright if the user's own prompt already answered a question — don't re-ask what they already told you.
 
@@ -31,6 +35,7 @@ Batch every open question; skip asking only what doesn't change scope, and state
 - **Consistency** — strong (payments, inventory) or eventual (counts, feeds, likes)? Most prompts tolerate eventual — say so, it simplifies everything downstream.
 - **The specific spiky-traffic risk this prompt implies**, if any (a link going viral, a vote surge) — naming it now is what makes the pitfall scan below targeted, not generic.
 - **Non-goals** — state what you're NOT building, so scope reads as deliberate.
+- **What "deployed" means for this session** — the backend API only, or the frontend too? Ask if it's not stated in the prompt itself — it changes the §4.21 deploy plan, and getting this wrong wastes the deploy budget on the wrong target.
 
 ### Default architecture: "one box, clean seams"
 
@@ -41,7 +46,7 @@ Batch every open question; skip asking only what doesn't change scope, and state
                                   +--> [Redis: pub/sub for fan-out, if the prompt needs live updates]
 ```
 
-Postgres + Redis are provisioned from minute one via `docker-compose.yml` (§4), not swapped in later. This wins in a 2-hour format: one deployable, nothing between-your-own-services to debug, and every "how would you scale this" question has a crisp answer (§3) because the seams (repository, cache, pub/sub) already exist in the code. Do **not** start with microservices, message queues, or multi-region — that costs build time you don't have and reads as a red flag here, not a strength.
+Postgres + Redis are provisioned from minute one via `docker-compose.yml` (§4), not swapped in later. This wins in a timed format: one deployable (also the easiest shape to actually get live on DigitalOcean within budget, §4.21), nothing between-your-own-services to debug, and every "how would you scale this" question has a crisp answer (§3) because the seams (repository, cache, pub/sub) already exist in the code. Do **not** start with microservices, message queues, or multi-region — that costs build time you don't have, makes the deploy step harder, and reads as a red flag here, not a strength.
 
 **Start from the simplest version that satisfies the goals above — simple designs scale further than expected, and it's the only version you can finish.** Add complexity only because the pitfall scan below finds a real, cheap-to-fix risk — never because it seems "more correct."
 
@@ -51,7 +56,7 @@ Check the simple design against this list. Tag each **build it** (cheap, minutes
 
 | Risk | Default call |
 |---|---|
-| **Single point of failure** — one app/DB/cache process | **Mention it.** App is already stateless, so horizontal scaling behind a load balancer is a config change; managed Postgres/Redis with failover is the prod answer. Don't build HA in 2 hours. |
+| **Single point of failure** — one app/DB/cache process | **Mention it.** App is already stateless, so horizontal scaling behind a load balancer is a config change; managed Postgres/Redis with failover is the prod answer. Don't build HA in this window. |
 | **Spiky/bursty traffic** on a specific endpoint the prompt implies (viral link, vote surge) | **Build it** if there's a genuinely hot endpoint: rate limiting (Decorator, ~10-15 min) + make sure that read path uses the cache-aside. Otherwise **mention it** — don't rate-limit everywhere speculatively. |
 | **Write races** — duplicate unique values, double-vote/booking, read-modify-write counters | **Build it** wherever the prompt has one: a DB unique constraint + conflict handling, or an atomic `UPDATE ... SET n = n + 1` instead of read-then-write. This is a correctness bug, not just a scaling nicety. |
 | **Unbounded list growth** — no pagination on a real list feature | **Build it**: basic `limit`/`offset`. Cheap now, awkward to bolt on live later. |
@@ -59,8 +64,18 @@ Check the simple design against this list. Tag each **build it** (cheap, minutes
 | **Trusting client input** for IDs/prices/ownership | **Build it**: generate/validate server-side (scaffold already does this for `Item.id`). |
 | **No idempotency** on a retryable POST | **Build it** only if retries plausibly matter (payments, orders); otherwise **mention it**. |
 | **Cache/DB divergence** — no invalidation on write | Already handled (`Cache.invalidate`, §4) — carry the same pattern into any new cached read. |
+| **Blocking calls inside an `async def`** — a sync DB/network call (psycopg, `requests`) called directly from an `async def` route/service blocks the whole event loop, stalling every other request | **Build it correctly from the start**: the scaffold's routes/service functions are plain `def`, not `async def` — FastAPI runs those in a threadpool automatically, so sync `psycopg`/`redis` calls are safe as-is. If you (or the AI) convert something to `async def` for any reason, every call inside it must become async too (`asyncpg`, `redis.asyncio`) — don't mix. This exact mistake is one of the two DigitalOcean is reported to specifically grade for (see callout below). |
+
+**This table is not just a design-phase exercise — it's the audit checklist DigitalOcean is reported to grade on.** Their hiring team has said prompts are deliberately structured so that AI-generated code confidently produces exactly two bugs from this table — a write race (check-then-act instead of atomic) or a blocking call in an async path — specifically to see whether the candidate catches and fixes them rather than accepting the AI's output at face value. Re-run this table against any AI-generated diff before accepting it, not just at design time.
 
 If the prompt is small with none of the above genuinely in play, say so, keep it simple, and skip straight to §4.
+
+### Likely prompt patterns (unofficial — third-party-sourced, not confirmed by DigitalOcean; prep as a bonus, not a substitute for the general process above)
+
+- **Cloud Resource Quota / Usage Limit Manager** — cap a tenant's resource usage against a preset quota (e.g. block the 1001st resource once a limit is hit). The natural AI-generated bug is exactly the write-race trap above: a `check quota, then if OK create resource` is a classic check-then-act race under concurrent requests. Build the check and the increment as one atomic operation — a Postgres `UPDATE ... SET used = used + 1 WHERE used < limit RETURNING used` (single statement, no separate read), not two steps.
+- **High-frequency telemetry / cache with origin-outage resilience** — an LRU-style cache (or ingestion pipeline) that must keep serving during an origin/DB outage instead of cascading the failure to the client. Build graceful degradation directly into `app/cache.py`'s `get_or_set`: on loader failure, fall back to the last-known-good cached value (even past TTL) instead of raising, and add a small circuit breaker (stop calling a failing origin after N consecutive failures, retry after a cooldown) as a thin wrapper — no library needed.
+
+If told which prompt you drew, jump straight to the matching notes above; otherwise the general scaffold and pitfall scan (§1/§2/§4) cover any prompt in this format.
 
 ## 2. LLD: SOLID/DRY + patterns, applied pragmatically
 
@@ -95,7 +110,9 @@ Current state → bottleneck → concrete next step, grounded in the actual code
 
 **Reliability?** Idempotency on retryable writes (idempotency key or upsert). Timeouts + backoff on outbound calls. Stateless app so a crashed instance is just replaced.
 
-**Deploy/monitor?** Containerize (Dockerfile, §4), N replicas behind a load balancer (DO App Platform or DO Load Balancer + Droplets), structured logging + `/health` (present), latency/error-rate metrics.
+**Deploy/monitor?** You'll have actually done this by the time it's asked (§4.21) — describe what you built: containerized (Dockerfile, §4), running live on a DO Droplet/App Platform, structured logging + `/health` (present). Next step if pushed further: N replicas behind a load balancer, latency/error-rate metrics, managed Postgres/Redis with failover.
+
+**Business trade-offs / "what would you do with more time" / downtime windows?** Expect this alongside the technical questions, not instead of them — DigitalOcean's own writeup frames the post-build conversation as covering both. Ground it in what you actually cut: e.g. "I skipped read replicas and HA because they cost setup time with no payoff at this scale, but the repository seam means adding one later is a config change, not a rewrite" (ties back to §2's layering). For a downtime-window question, talk about what degrades gracefully vs. what breaks: stateless app instances mean a rolling restart has zero downtime; a single (non-replicated) Postgres/Redis is the one real single point of failure, and the honest answer is "a maintenance window or a managed failover DB, which I didn't build here because of time." Don't oversell what you didn't build — naming the real gap and its cost/benefit reads better than pretending it's already handled.
 
 ## 4. Scaffold — copy these files verbatim, then adapt
 
@@ -743,6 +760,43 @@ If Docker isn't available, point `DATABASE_URL`/`REDIS_URL` env vars (see `deps.
 
 **Fast wins if time allows, in order**: extend `test_smoke.py` for the real entity (green tests are a strong signal) → `/health` already present, ties to the monitoring talking point → `Dockerfile`/`docker-compose.yml` already present, evidence of deployment thinking → keep the loading/error states in the frontend, don't strip them.
 
+### 4.21 Deploy to DigitalOcean — required, ~20 min, do this with time to spare
+
+DigitalOcean's own format requires the prototype live on their platform before the session ends — not just running locally. Fastest reliable path: one Droplet running the whole stack via Docker Compose, reusing `docker-compose.yml` (§4.3) as-is plus one added service.
+
+```bash
+# One-time, from your local machine (doctl already authenticated: `doctl auth init`)
+doctl compute droplet create interview-app \
+  --image docker-20-04 --size s-1vcpu-2gb --region nyc3 \
+  --ssh-keys <your-key-fingerprint> --wait --format ID,PublicIPv4
+
+# Ship the code (run from the project root)
+rsync -av --exclude node_modules --exclude .venv --exclude __pycache__ \
+  ./ root@<droplet-ip>:/root/app/
+```
+
+Add the backend as a third service in `backend/docker-compose.yml` (append, don't replace the existing `postgres`/`redis` services):
+```yaml
+  app:
+    build: .
+    ports:
+      - "80:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/app
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+```
+```bash
+ssh root@<droplet-ip> "cd /root/app/backend && docker compose up -d --build"
+curl http://<droplet-ip>/health   # confirm {"status":"ok"} before calling it done
+```
+
+For the frontend, if the interviewer expects it live too: point `frontend/vite.config.js`'s API proxy target at `http://<droplet-ip>` and either run `npm run build` + serve the static output from the same Droplet (a tiny `nginx` or `serve` container added to the same compose file) or run it locally against the deployed API — confirm which is expected as part of §1's clarifying batch (already added there). A deployed-but-broken app is worse than skipping deployment, since it's the last thing the interviewer sees — always verify `/health` and one real request before moving to defense prep.
+
+If a GitHub repo and DO Container Registry are already set up and faster for you personally, DO App Platform (`doctl apps create --spec app.yaml` against a pushed image) is the on-brand alternative — use whichever path you can execute fastest under time pressure, the Droplet route above just has the fewest moving pieces to fail.
+
 ## 5. Using Cursor for the live build
 
 The interview itself runs in Cursor, not Claude Code — this section is the bridge.
@@ -787,6 +841,17 @@ gold-plating. When a decision doesn't change the outcome, make it and move
 on. Never leave the editor/chat idle while something else could be
 happening -- if a clarifying question is pending or a command is running,
 use a second chat thread for research that unblocks the next step.
+
+The prototype must be deployed live on DigitalOcean before the session ends
+-- this is a hard requirement, not a stretch goal. Budget time for it up
+front instead of leaving it for "if there's time."
+
+Do not accept AI-generated code at face value. Before moving on from any
+generated chunk, check it for a check-then-act write race (should be one
+atomic DB statement, not read-then-write) and for a blocking sync call
+inside an async def (should not mix -- route handlers here are plain def
+on purpose so sync psycopg/redis calls are safe). Catching these two is
+reported to be specifically what's graded.
 ```
 
 Pre-stage the §4 scaffold files too if the format allows a personal template repo (confirm with the interviewer first); if not, recreate the structure quickly from this file — the layering should be a habit going in, not looked up live.
@@ -813,13 +878,15 @@ Being transparent that you're using Cursor's AI deliberately (Tab for boilerplat
 
 ## 6. Orchestration checklist
 
-1. **Read the prompt** — restate entities/actions in 1-2 sentences, name the time budget/phases (§0) out loud.
-2. **Ask once, then stop asking** — §1's batch of clarifying questions, in one shot. Wait for the answer (or explicit "use your judgment") before doing anything below — a real gate, not a formality — then don't reopen it; decide any remaining gaps yourself and move on.
-3. **Design (~10 min from here)** — §1: sketch the simplest architecture, state goals/non-goals, run the pitfall scan. Stop as soon as you have it.
-4. **Scaffold (~5 min)** — §4: copy files in, start Postgres+Redis, get both dev servers running before writing custom code. Confirm `/health` and the frontend root load — catching a broken toolchain now costs 2 minutes, at minute 90 it costs the interview.
-5. **Backend (~45-50 min)** — §4.20 adapt pass + §2 judgment. Test each endpoint as you finish it. Checkpoint: by the midpoint, core flows reachable via `curl`/`/docs` even before the frontend exists.
-6. **Frontend (~30-40 min)** — golden path > loading/error > (no) polish, per §0's zero-CSS rule.
-7. **Defense prep (~10-15 min, can overlap)** — §3's answers ready, grounded in the code just written.
-8. **Final pass (~10 min)** — exercise the golden path in the browser, confirm both servers start clean from a fresh terminal, have a one-sentence close ready: what's built, what's out of scope and why, first three next steps.
+1. **Pick the prompt, if given a list** — §1: favor a prepped pattern or the smallest clear scope.
+2. **Read the prompt** — restate entities/actions in 1-2 sentences, name the time budget/phases (§0) out loud.
+3. **Ask once, then stop asking** — §1's batch of clarifying questions, in one shot. Wait for the answer (or explicit "use your judgment") before doing anything below — a real gate, not a formality — then don't reopen it; decide any remaining gaps yourself and move on.
+4. **Design (~10 min from here)** — §1: sketch the simplest architecture, state goals/non-goals, run the pitfall scan. Stop as soon as you have it.
+5. **Scaffold (~5 min)** — §4: copy files in, start Postgres+Redis, get both dev servers running before writing custom code. Confirm `/health` and the frontend root load — catching a broken toolchain now costs 2 minutes, at minute 90 it costs the interview.
+6. **Backend (~50-60 min)** — §4.20 adapt pass + §2 judgment. Test each endpoint as you finish it. Before accepting any AI-generated chunk, re-check it against §1's pitfall table, especially the write-race and blocking-call rows — that check is what's graded. Checkpoint: by the midpoint, core flows reachable via `curl`/`/docs` even before the frontend exists.
+7. **Frontend (~30-40 min)** — golden path > loading/error > (no) polish, per §0's zero-CSS rule.
+8. **Deploy (~20 min, required)** — §4.21: get it live on DigitalOcean, verify `/health` and one real request from outside your machine before moving on. Don't leave this for "if there's time" — it's a stated requirement of the format, not a bonus.
+9. **Defense prep (~15-20 min, can overlap with deploy waiting on DNS/build)** — §3's answers ready, grounded in the code just written, including the business-trade-off framing, not just technical scaling.
+10. **Final pass (~10 min)** — exercise the golden path against the deployed URL (not just localhost), confirm both servers start clean from a fresh terminal, have a one-sentence close ready: what's built, what's out of scope and why, first three next steps.
 
-**Boundaries**: don't let architecture discussion eat build time — lock it in and adjust as you build. Don't introduce infrastructure beyond Postgres+Redis unless asked live. If behind schedule, cut scope before cutting layering/testing habits — a smaller well-structured app outscores a larger messy one.
+**Boundaries**: don't let architecture discussion eat build time — lock it in and adjust as you build. Don't introduce infrastructure beyond Postgres+Redis unless asked live. If behind schedule, cut scope before cutting layering/testing habits or the deployment step — a smaller, well-structured, actually-deployed app outscores a larger messy or undeployed one.
