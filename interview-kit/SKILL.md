@@ -5,11 +5,13 @@ description: Single self-contained kit for a timed "build and deploy a full-stac
 
 # Interview kit — timed full-stack build
 
-One file, no GitHub dependency: requirements → design → LLD → scaffold code (inlined below) → Cursor workflow → deployment → verbal defense.
+One file, no GitHub dependency: requirements → design → LLD → scaffold code (inlined below) → Cursor workflow → deployment → verbal defense. Prep/rehearse here; the actual build runs in Cursor (§5) unless told otherwise.
 
-Prep/rehearse here; the actual build runs in Cursor (§5) unless told otherwise. Priority order: working, **deployed** demo > code that looks deliberately structured on a skim > sharp, ready answers to scaling/reliability/business-tradeoff questions. Working-but-plain beats brilliant-but-unfinished, and undeployed beats nothing — DigitalOcean's own writeup on this format confirms the prototype must actually be live on their platform before time's up, not just running locally (§4.21).
+**Format** (DigitalOcean's confirmed shape): a 3-hour session, pick from a short list of assigned prompts, build it, deploy it live on DigitalOcean before time's up (§4.21) — then a walkthrough of design trade-offs and hypotheticals on scaling, traffic spikes, downtime, and business constraints. The user, not the agent, answers that walkthrough, so the agent's job includes handing off a `design-decisions.md` the user can study (§1).
 
-**What's actually graded** (per DigitalOcean's own hiring writeup, not guesswork): they watch *where* you rely on AI (boilerplate) vs. what you check/adjust by hand (concurrency controls, blocking calls) — and they deliberately pick prompts where a naive AI tool confidently generates flawed logic (race conditions, blocking network calls in an async path) specifically to see if you catch and fix it. Treat every block of AI-generated code as something to audit against §1's pitfall scan before accepting it — that audit *is* the interview, not a nice-to-have. Format: a **3-hour** session, candidates pick from a short list of assigned prompts, followed by a walkthrough of design choices/trade-offs and hypotheticals on scaling, traffic spikes, downtime, and business constraints.
+**Priority order**: working, deployed demo > code that looks deliberately structured on a skim > sharp answers to those questions. Working-but-plain beats brilliant-but-unfinished; undeployed beats nothing.
+
+**What's actually graded**: DigitalOcean's own hiring writeup says they watch where you lean on AI (boilerplate — fine) vs. what you check by hand (concurrency, blocking calls) — prompts are deliberately structured so naive AI output confidently introduces a race condition or a blocking call, specifically to see if you catch it. Treat every AI-generated chunk as something to audit against §1's pitfall scan before accepting it — that audit *is* the interview, not a nice-to-have.
 
 ## 0. Time-compression tactics (apply throughout)
 
@@ -79,7 +81,7 @@ If told which prompt you drew, jump straight to the matching notes above; otherw
 
 ### Once design decisions are locked: hand off a review doc
 
-**The person answering the design-walkthrough questions afterward is the user, not the agent** — DigitalOcean's post-build conversation is between the interviewer and the candidate. So the moment goals/non-goals, architecture, and the pitfall-scan calls are locked in (end of this section), spawn a background subagent to write `design-decisions.md` at the project root, summarizing everything the user needs to review and internalize before that conversation — don't wait until the build is finished to start this, and don't do the writing inline yourself, since it would burn foreground time better spent on §4/§4.21.
+The moment goals/non-goals, architecture, and the pitfall-scan calls are locked in (end of this section), spawn a background subagent to write `design-decisions.md` at the project root — the user studies it before the walkthrough (intro), so start this now rather than at the end of the build, and don't write it inline yourself; that's foreground time better spent on §4/§4.21.
 
 Give the subagent the locked-in goals/non-goals, the architecture, and every pitfall-scan row with its build/mention call and reasoning, and have it produce a concise `design-decisions.md` covering:
 - **Goals & non-goals** — what's in scope and, just as importantly, what was deliberately left out and why.
