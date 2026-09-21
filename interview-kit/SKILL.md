@@ -5,28 +5,28 @@ description: Single self-contained kit for a timed "build a full-stack app in ~2
 
 # Interview kit — 2-hour full-stack build
 
-One file, because the interview machine may not have GitHub access: this covers requirements → architecture → code structure → the actual scaffold (inlined as copy-paste files below) → Cursor workflow → verbal defense, end to end.
+One file, no GitHub dependency: requirements → design → LLD → scaffold code (inlined below) → Cursor workflow → verbal defense.
 
-You are pairing with the user to *prepare for and rehearse*, and possibly to co-drive, a live timed interview. The actual build happens in Cursor (§5), so treat a Claude Code session as prep/dry-run unless told otherwise. Optimize in this order: something working and demoable > a codebase that looks deliberately structured on a skim > the user having sharp, ready answers for scaling/reliability questions. A brilliant architecture that isn't running loses to a plain CRUD app that works and whose author can clearly explain how they'd scale it.
+Prep/rehearse here; the actual build runs in Cursor (§5) unless told otherwise. Priority order: working demo > code that looks deliberately structured on a skim > sharp, ready answers to scaling/reliability questions. Working-but-plain beats brilliant-but-unfinished.
 
-## 0. Time-compression tactics (apply throughout, not just once)
+## 0. Time-compression tactics (apply throughout)
 
 The real enemy in a 2-hour window is idle/serial time, not typing speed.
 
-- **Never block on a single open question.** Batch every clarifying question into one shot, not a back-and-forth — most requirements questions are independent, there's no reason to serialize them.
-- **Use dead time for research, not idling.** The moment a question is pending, or a slow command is running (`docker compose up`, `npm install`, a migration), that wait is wasted unless filled. Fire a parallel background task the instant you ask the question, not after the answer lands: look up a library API/syntax you'll need next, check a reference pattern, or pre-draft the next file. In Claude Code: launch a `fork`/background Agent in the *same turn* as the clarifying question. In Cursor during the live interview: open a second chat tab or Background Agent to research while the main thread waits (see §5.3).
-- **Decide, don't deliberate.** Any choice that doesn't change the interview's outcome (which UUID helper, which HTTP status convention) gets a reasonable default instantly, not a question. Reserve real questions for things that change scope or that only the user/interviewer can answer.
-- **Zero visual design time.** No CSS framework, no stylesheet, no color/spacing decisions beyond the inline styles already in the scaffold below. This is a hard rule from the start, not a fallback for leftover time — spend any saved time on a second feature or on rehearsing the scaling talking points instead.
-- **Time budget** (2 hours, adjust if told otherwise): ~10 min requirements+design (§1), ~5 min scaffold copy-in (§4), ~45-50 min backend, ~30-40 min frontend, ~15-20 min polish + defense prep (§3), buffer.
+- **Batch every clarifying question into one shot** — most are independent, don't serialize them.
+- **Use dead time for research, never idle.** The instant a question is pending or a slow command is running (`docker compose up`, `npm install`), fire a parallel task to look up what you'll need next — don't wait for the answer to start it. Claude Code: a `fork`/background Agent in the same turn as the question. Cursor: a second chat tab or Background Agent (§5.3).
+- **Decide, don't deliberate.** Default any choice that doesn't change the outcome; only ask what changes scope.
+- **Zero CSS.** No framework, no stylesheet, nothing beyond the scaffold's inline styles — hard rule from the start, not a fallback. Spend saved time on a feature or on defense rehearsal instead.
+- **Budget** (2h, adjust as told): ~10 min design (§1), ~5 min scaffold copy-in (§4), ~45-50 min backend, ~30-40 min frontend, ~15-20 min polish + defense (§3), buffer.
 
 ## 1. Requirements & HLD (~10 min, don't exceed)
 
-Ask every open question in one batch, not one at a time; skip asking anything that doesn't change scope and just state the assumption. The output of this step is a short, explicit statement of goals and non-goals — not just information gathered, an actual decision you (and the interviewer) can hold the rest of the build to. Cover:
-- **Core entities & actions** — what does the user create/read/update/delete?
-- **Read vs write ratio** — most prompts (shorteners, polls, chat, task boards, rate limiters, notification systems) are read-heavy or write-bursty; say which, it drives the caching/scaling story.
-- **Consistency requirement** — strongly consistent (payments, inventory) or eventually consistent (view counts, feeds, likes)? Most interview prompts tolerate eventual consistency — say so, it simplifies everything downstream.
-- **The specific risk this prompt implies** — is there a plausible spiky-traffic scenario in this prompt (a link going viral, a vote surge), or not? Naming this now is what makes the pitfall scan below targeted instead of generic.
-- **Explicit non-goals** — state what you're NOT building (multi-region, multi-tenant auth, billing) so scope reads as deliberate, not accidental.
+Batch every open question; skip anything that doesn't change scope and just state the assumption. Output: a short, explicit statement of goals and non-goals — a decision to hold the build to, not just gathered info. Cover:
+- **Core entities & actions** — create/read/update/delete what?
+- **Read vs write ratio** — most prompts (shorteners, polls, task boards, rate limiters) are read-heavy or write-bursty; name which, it drives the caching story.
+- **Consistency** — strong (payments, inventory) or eventual (counts, feeds, likes)? Most prompts tolerate eventual — say so, it simplifies everything downstream.
+- **The specific spiky-traffic risk this prompt implies**, if any (a link going viral, a vote surge) — naming it now is what makes the pitfall scan below targeted, not generic.
+- **Non-goals** — state what you're NOT building, so scope reads as deliberate.
 
 ### Default architecture: "one box, clean seams"
 
@@ -37,63 +37,65 @@ Ask every open question in one batch, not one at a time; skip asking anything th
                                   +--> [Redis: pub/sub for fan-out, if the prompt needs live updates]
 ```
 
-Postgres + Redis are provisioned from minute one via the scaffold's `docker-compose.yml` (§4), not swapped in later. Why this architecture wins in a 2-hour format: one deployable, no network calls between your own services to debug under time pressure, and every "how would you scale this" question has a crisp, concrete answer (§3) because the seams (repository, cache, pub/sub) are already there in the code. Do **not** start with microservices, message queues, or multi-region — that costs implementation time you don't have and reads as a red flag, not a strength, in a 2-hour app.
+Postgres + Redis are provisioned from minute one via `docker-compose.yml` (§4), not swapped in later. This wins in a 2-hour format: one deployable, nothing between-your-own-services to debug, and every "how would you scale this" question has a crisp answer (§3) because the seams (repository, cache, pub/sub) already exist in the code. Do **not** start with microservices, message queues, or multi-region — that costs build time you don't have and reads as a red flag here, not a strength.
 
-**Start from the simplest version of this that satisfies the entities/goals above — a simple design already scales further than people expect, and it's the only version you can actually finish.** Don't add anything below because it seems "more correct"; add it only because the pitfall scan finds a real, cheap-to-fix risk.
+**Start from the simplest version that satisfies the goals above — simple designs scale further than expected, and it's the only version you can finish.** Add complexity only because the pitfall scan below finds a real, cheap-to-fix risk — never because it seems "more correct."
 
-### Pitfall scan — do this now, on paper/out loud, before writing code
+### Pitfall scan — before writing any code
 
-Run the simple design above against this checklist. The point isn't to fix everything — most items are a one-sentence mitigation you state and don't build, exactly like §3. Flag each as **build it** (cheap, minutes, clearly implied by the prompt) or **mention it** (real risk, but not worth the build time or not implied by this specific prompt) — don't blanket-apply the whole list to every prompt, that's scope creep in the other direction. Doing this scan *before* coding is what lets a handful of these become one-line changes instead of a rewrite discovered mid-build.
+Check the simple design against this list. Tag each **build it** (cheap, minutes, clearly implied by the prompt) or **mention it** (real, but a §3 talking point, not worth the build time) — don't blanket-apply the whole list, that's scope creep in the other direction. Doing this now turns real risks into one-line changes instead of mid-build rewrites.
 
-- **Single point of failure** — one FastAPI process, one Postgres instance, one Redis instance. You cannot build real HA in 2 hours. **Mention it**: the app is already stateless (no in-memory session state) so horizontal scaling behind a load balancer is a config change, not a rewrite; managed Postgres/Redis with failover (e.g. DO Managed Databases) is the production answer for the DB/cache tier. Don't let this become a build task.
-- **Spiky/bursty traffic on a specific endpoint** — identify which one the prompt actually implies (a share link going viral, a vote endpoint during a live event, a signup rush). If there is a genuinely hot endpoint, **build it**: rate limiting (a `Decorator`-pattern check, in-memory token bucket or Redis-backed if you need it shared across instances — ~10-15 min) and make sure that endpoint's read path is the one covered by the cache-aside in §4. If the prompt has no obviously spike-prone endpoint, **mention it** generically per §3 instead of building speculative rate limiting everywhere.
-- **Race conditions on writes** — two requests racing to claim a unique value (short code, username), double-vote, double-booking, a read-modify-write counter increment. **Build it** wherever the prompt has one of these (they're usually cheap: a DB unique constraint + handling the conflict, or an atomic `UPDATE ... SET count = count + 1` instead of read-then-write) — this is a correctness bug waiting to be found live, not just a scaling nicety.
-- **Unbounded list growth / no pagination** — a `list()` endpoint with no limit gets slow and is an easy "what happens at 1M rows" question. **Build it** if listing is a real feature of the prompt: basic `limit`/`offset` or cursor pagination, cheap to add up front, expensive-looking to bolt on live after the interviewer asks.
-- **Missing index on an obvious query pattern** — any lookup that isn't by primary key (e.g. lookup by owner, by code, by status). **Build it**: one `CREATE INDEX` line costs nothing and preempts the "how would you scale the DB" question actually being a real problem in your own code.
-- **Trusting client input for anything identity/consistency-relevant** — client-supplied IDs, prices, ownership fields. **Build it**: generate/validate server-side (the scaffold already does this — `Item.id` is server-generated, request models never accept it).
-- **No idempotency on retryable writes** — a POST that a flaky client/network might resend, creating duplicates. **Build it** only where the prompt implies retries matter (payments, order creation); otherwise **mention it** per §3.
-- **Cache/DB divergence** — a cache with no invalidation path on writes. Already handled by the scaffold's `Cache.invalidate` in §4; if you add more cached reads, carry the same write-through invalidation, don't rely on TTL alone.
+| Risk | Default call |
+|---|---|
+| **Single point of failure** — one app/DB/cache process | **Mention it.** App is already stateless, so horizontal scaling behind a load balancer is a config change; managed Postgres/Redis with failover is the prod answer. Don't build HA in 2 hours. |
+| **Spiky/bursty traffic** on a specific endpoint the prompt implies (viral link, vote surge) | **Build it** if there's a genuinely hot endpoint: rate limiting (Decorator, ~10-15 min) + make sure that read path uses the cache-aside. Otherwise **mention it** — don't rate-limit everywhere speculatively. |
+| **Write races** — duplicate unique values, double-vote/booking, read-modify-write counters | **Build it** wherever the prompt has one: a DB unique constraint + conflict handling, or an atomic `UPDATE ... SET n = n + 1` instead of read-then-write. This is a correctness bug, not just a scaling nicety. |
+| **Unbounded list growth** — no pagination on a real list feature | **Build it**: basic `limit`/`offset`. Cheap now, awkward to bolt on live later. |
+| **Missing index** on any non-PK lookup (by owner, code, status) | **Build it** — one `CREATE INDEX` line, preempts the "scale the DB" question being a real bug. |
+| **Trusting client input** for IDs/prices/ownership | **Build it**: generate/validate server-side (scaffold already does this for `Item.id`). |
+| **No idempotency** on a retryable POST | **Build it** only if retries plausibly matter (payments, orders); otherwise **mention it**. |
+| **Cache/DB divergence** — no invalidation on write | Already handled (`Cache.invalidate`, §4) — carry the same pattern into any new cached read. |
 
-If the prompt is small (a simple CRUD tool with none of the above genuinely in play), say so explicitly, keep the design simple, and skip straight to §4 — don't invent structure or mitigations the app doesn't need just to look thorough.
+If the prompt is small with none of the above genuinely in play, say so, keep it simple, and skip straight to §4.
 
 ## 2. LLD: SOLID/DRY + patterns, applied pragmatically
 
-**The rule that overrides every pattern below**: apply a pattern only when you can already name a second variant it needs to accommodate. An interface with one implementation "for future extensibility" is YAGNI and costs typing time you need elsewhere.
+**Overriding rule**: use a pattern only when you can name a second variant it needs to accommodate. One implementation behind an interface "for future extensibility" is YAGNI and costs time you need elsewhere.
 
-**SOLID, briefly**: split by *reason to change* (route handler / service / repository are three separate reasons, so three separate functions even in a small app — this alone is most of what makes the code look professional on a skim). Route handlers depend on an abstraction (a `Protocol`/`Depends`-injected interface), never directly on `psycopg`/`redis` — this is the single highest-value habit here, it's what makes "how would you swap X" be "change one function," not "rewrite the app."
+**SOLID, briefly**: split by *reason to change* — route handler / service / repository are three separate reasons even in a small app; this alone makes the code look professional on a skim. Route handlers depend on an abstraction (`Protocol`/`Depends`), never directly on `psycopg`/`redis` — the highest-value habit here, since it turns "how would you swap X" into "change one function."
 
-**DRY, briefly**: duplication across 2 call sites is fine (rule of three). Never duplicate: validation/business rules, response shapes (use Pydantic models), or DB access for one entity (one repository, not scattered raw queries).
+**DRY, briefly**: duplication across 2 call sites is fine (rule of three). Never duplicate validation rules, response shapes (Pydantic models), or DB access for one entity (one repository).
 
-**Pattern shortlist** (Python: use `typing.Protocol`, no inheritance ceremony):
-- **Repository** — use almost always. Isolates storage behind an interface; it's *the* seam the scaling story leans on, and it makes the app testable without a real DB. See `app/repository.py` in §4.
-- **Strategy** — use when there are genuinely interchangeable algorithms (e.g. multiple short-code generation strategies, multiple ranking rules). Skip it if there's only one way to do the thing.
-- **Factory** — use for branching construction logic (e.g. picking a repository impl by env). A plain function or FastAPI `Depends` provider usually *is* the factory; you rarely need a dedicated Factory class at this scale. See `app/deps.py`.
-- **Decorator** — cross-cutting concerns on functions (logging, timing, rate-limiting). Python decorators are the natural fit regardless of whether you narrate it as "the pattern."
-- **Observer** — one action triggers multiple independent side effects (e.g. signup → email + analytics + provisioning), or fan-out via Redis pub/sub. See `app/events.py`.
-- **Adapter** — wrapping a third-party SDK/API (DigitalOcean API, payment provider) behind your own narrow interface so business logic doesn't import the SDK directly.
-- **Avoid**: Abstract Factory, Visitor, Chain of Responsibility, Builder, multi-level class hierarchies — these cost more typing than they buy clarity at this scale and read as a junior-engineer tell to a reviewer skimming interview code.
+**Pattern shortlist** (Python: `typing.Protocol`, no inheritance ceremony):
+- **Repository** — use almost always; *the* seam the scaling story leans on, and makes the app testable without a real DB. `app/repository.py`.
+- **Strategy** — only with genuinely interchangeable algorithms (e.g. multiple code-gen or ranking rules). Skip if there's only one way to do it.
+- **Factory** — branching construction logic (e.g. repo impl by env). A plain function/`Depends` provider usually *is* the factory. `app/deps.py`.
+- **Decorator** — cross-cutting concerns (logging, timing, rate-limiting) — just use Python decorators.
+- **Observer** — one action fans out to independent side effects, or Redis pub/sub. `app/events.py`.
+- **Adapter** — wrap a third-party SDK/API behind your own narrow interface.
+- **Avoid**: Abstract Factory, Visitor, Chain of Responsibility, Builder, multi-level hierarchies — cost more typing than clarity here and read as a junior-engineer tell.
 
-**Code layout** (what the scaffold in §4 already gives you): `main.py` thin routes → `service.py` business logic (depends only on repository/cache interfaces) → `repository.py` the only place touching Postgres → `cache.py`/`events.py` Redis, wrapped → `models.py` one Pydantic shape per concept, reused everywhere → `deps.py` wiring/env-driven implementation choice. New feature = new service function; new storage backend = new repository implementation; nothing else changes. That layering *is* the LLD answer to "how is this extensible."
+**Code layout** (already in §4): `main.py` thin routes → `service.py` business logic (depends only on interfaces) → `repository.py` only place touching Postgres → `cache.py`/`events.py` Redis, wrapped → `models.py` one Pydantic shape per concept → `deps.py` wiring. New feature = new service function; new storage backend = new repository implementation; nothing else changes. That layering *is* the extensibility answer.
 
 ## 3. Talking points for common HLD follow-ups
 
-State current state → bottleneck → concrete next step, grounded in the actual code just written, not generic vocabulary.
+Current state → bottleneck → concrete next step, grounded in the actual code just written, not generic vocabulary.
 
-**"How do you handle a traffic spike / going viral?"** Current: single stateless FastAPI process. Bottleneck: DB connections/CPU on one box. Next, in order of effort: (a) horizontal scale — N identical stateless instances behind a load balancer, works immediately *because* the app holds no in-memory session state (mention this is why stateless token auth over server-side sessions), (b) cache hot reads (below), (c) a queue to absorb write bursts asynchronously, (d) rate-limit/backpressure at the edge so a spike degrades gracefully instead of falling over.
+**Traffic spike / going viral?** Current: single stateless FastAPI process; bottleneck: DB connections/CPU on one box. Next, by effort: (a) horizontal scale — N stateless instances behind a load balancer, works immediately because there's no in-memory session state, (b) cache hot reads, (c) a queue to absorb write bursts async, (d) rate-limit/backpressure at the edge.
 
-**"How would you cache this?"** Identify the hot read path; cache key = the lookup key; TTL or write-through invalidation on update. Already using Redis from the start (`app/cache.py`), specifically because an in-process cache doesn't stay consistent once you scale to N app instances. Cache-aside: check cache → miss → read DB → populate → return (exactly what `Cache.get_or_set` does). Mention cache stampede (many misses on a hot key at once) as a known failure mode; fix is request coalescing or a short jittered TTL. If the prompt needs live/multi-consumer fan-out, the same Redis instance's pub/sub (`app/events.py`) is the low-effort answer before reaching for a dedicated broker.
+**How would you cache this?** Hot read path → cache key = lookup key → TTL or write-through invalidation. Redis from the start (`app/cache.py`) because an in-process cache doesn't stay consistent across N instances. Cache-aside: miss → read DB → populate → return (`Cache.get_or_set`). Mention cache stampede (fix: coalescing or jittered TTL). Live/multi-consumer fan-out → same Redis instance's pub/sub (`app/events.py`) before a dedicated broker.
 
-**"How would you scale the database?"** First: indexes on actual query patterns, and the connection pool already in `PostgresItemRepository` (bounds concurrent connections instead of exhausting Postgres under a spike). Second: read replicas — the API already treats Postgres behind a repository interface, so routing reads to a replica is a swap at that seam, not a rewrite. Third: sharding only if asked explicitly about very large scale — name the shard key (e.g. user id) and that it trades cross-shard queries for write capacity; don't volunteer this unprompted.
+**Scale the database?** First: indexes + the connection pool already in `PostgresItemRepository`. Second: read replicas — Postgres is already behind a repository interface, so routing reads to a replica is a swap at that seam. Third: sharding, only if asked about very large scale — name the shard key and the cross-shard-query tradeoff; don't volunteer it.
 
-**"What about consistency / race conditions?"** Name the specific race in the actual app (two requests incrementing a counter, double-booking a slot) and how you'd close it: a DB unique constraint/transaction, `SELECT ... FOR UPDATE`, or an atomic increment — not a vague "add a lock." Distinguish where strong consistency is needed (writes to the core entity) vs. where eventual consistency is fine (denormalized reads, counters).
+**Consistency / race conditions?** Name the specific race in the actual app (two requests incrementing a counter, double-booking) and the fix: a unique constraint/transaction, `SELECT ... FOR UPDATE`, or an atomic increment — not a vague "add a lock." Strong consistency on core writes, eventual is fine for denormalized reads/counters.
 
-**"How do you make this reliable?"** Idempotency on retry-able write endpoints (client idempotency key, or natural idempotency via upsert). Timeouts + backoff on outbound calls. Stateless app so a crashed instance is just replaced, not a data-loss event.
+**Reliability?** Idempotency on retryable writes (idempotency key or upsert). Timeouts + backoff on outbound calls. Stateless app so a crashed instance is just replaced.
 
-**"How would you deploy/monitor this?"** Containerize (Dockerfile in §4), N replicas behind a load balancer (DigitalOcean App Platform or DO Load Balancer + Droplets is the on-brand answer), structured logging + `/health` (already present), latency/error-rate metrics.
+**Deploy/monitor?** Containerize (Dockerfile, §4), N replicas behind a load balancer (DO App Platform or DO Load Balancer + Droplets), structured logging + `/health` (present), latency/error-rate metrics.
 
 ## 4. Scaffold — copy these files verbatim, then adapt
 
-Create this directory layout, paste each block into the named file, then adapt per §4.9. This is a full working FastAPI + Postgres + Redis backend and a React (Vite) frontend, already layered per §2 — it has been installed and its smoke test run successfully.
+Create this directory layout, paste each block into the named file, then adapt per §4.20. This is a full working FastAPI + Postgres + Redis backend and a React (Vite) frontend, already layered per §2 — it has been installed and its smoke test run successfully.
 
 ```
 backend/
@@ -739,11 +741,11 @@ If Docker isn't available, point `DATABASE_URL`/`REDIS_URL` env vars (see `deps.
 
 ## 5. Using Cursor for the live build
 
-The interview itself runs in Cursor, not Claude Code. This section is the bridge.
+The interview itself runs in Cursor, not Claude Code — this section is the bridge.
 
 ### 5.1 Before the interview: port these conventions into Cursor
 
-Cursor reads **Project Rules** — `.mdc` files under `.cursor/rules/`, auto-attached to its chat/agent/Tab context. Create `.cursor/rules/interview-conventions.mdc` ahead of time with this content:
+Cursor reads **Project Rules** — `.mdc` files under `.cursor/rules/`, auto-attached to its chat/agent/Tab context. Create `.cursor/rules/interview-conventions.mdc` ahead of time:
 
 ```markdown
 ---
@@ -783,40 +785,36 @@ happening -- if a clarifying question is pending or a command is running,
 use a second chat thread for research that unblocks the next step.
 ```
 
-Also pre-stage the §4 scaffold files into the starting project if the interview format allows a personal template repo — confirm with the interviewer first; if not, recreate the structure quickly from this file, which is exactly why the layering should be a habit going in, not something looked up live.
+Pre-stage the §4 scaffold files too if the format allows a personal template repo (confirm with the interviewer first); if not, recreate the structure quickly from this file — the layering should be a habit going in, not looked up live.
 
 ### 5.2 Cursor features worth using live
 
-- **Tab (autocomplete)** — always on, free. Best for repetitive shape-following code (a second Pydantic model matching the first, a fourth route matching the first three).
-- **Cmd+K (inline edit)** — small, localized, well-specified changes to code you're looking at. Faster than a chat round-trip for anything scoped to the current file/selection.
-- **Agent/Composer (multi-file)** — the two big moves here: (a) initial scaffold generation if not pre-staged, prompted with the `.mdc` layering, and (b) the §4.20 rename-and-extend pass across files, pasting that checklist directly into the prompt. Always review the diff before accepting — a wrong assumption compounds across files fast.
-- **@-mentions** (`@filename`/`@codebase`) — for any chat/agent question that depends on existing code, instead of re-pasting code.
-- **Checkpoints** — skim the changed-files list after any multi-file Agent edit before moving on; cheap insurance against a bad assumption compounding.
+- **Tab** — always on, free. Best for repetitive shape-following code.
+- **Cmd+K** — small, localized, well-specified edits; faster than a chat round-trip for anything scoped to the current selection.
+- **Agent/Composer** — initial scaffold generation if not pre-staged, and the §4.20 rename-and-extend pass (paste that checklist into the prompt). Always review the diff — a wrong assumption compounds across files fast.
+- **@-mentions** — reference existing code instead of re-pasting it.
+- **Checkpoints** — skim the changed-files list after any multi-file edit before moving on.
 
 ### 5.3 Use dead time: parallelize research instead of idling
 
-Any time blocked on something other than typing (waiting on the interviewer's answer, `docker compose up` pulling images, `npm install`) is wasted unless filled:
-- Open a second chat tab (or Background Agent) the moment you ask a clarifying question, and research whatever comes next regardless of the answer — don't wait for the reply to start.
-- Batch clarifying questions (§0) so you're not creating a new idle moment every few minutes.
-- Queue the next file while a slow command runs — write/adapt it by hand or via Cmd+K instead of watching the terminal.
-- Don't let research become its own rabbit hole — pull the one fact needed and get back to building; if a lookup is taking longer than what it was meant to save, abandon it and make a reasonable call.
+Any time blocked on something other than typing is wasted unless filled: open a second chat tab (or Background Agent) the moment you ask a clarifying question and research what comes next regardless of the answer — don't wait for the reply to start. Batch questions (§0) so idle moments aren't recurring. Queue/write the next file while a slow command runs instead of watching the terminal. Don't let research become its own rabbit hole — pull the one fact needed and get back to building.
 
 ### 5.4 What NOT to reach for live
 
-Don't hand-tune Cursor settings/models mid-interview. Don't use Agent mode for large open-ended asks ("build the whole backend") without giving it the specific layering/entity first — an unscoped prompt produces generic CRUD needing a second pass, costing more net time. Don't fight Tab's suggestions over stylistic preferences that don't matter.
+Don't hand-tune Cursor settings/models mid-interview. Don't send Agent mode a large open-ended ask ("build the whole backend") without the specific layering/entity first — an unscoped prompt needs a costly second pass. Don't fight Tab over stylistic preferences that don't matter.
 
 ### 5.5 Talking to the interviewer about tool use
 
-Being transparent that you're using Cursor's AI features deliberately (Tab for boilerplate, Agent for scoped multi-file changes) is a fair, often positive signal — the interesting thing for them is whether *you* made the architecture/pattern decisions (§1-§3) while the tool accelerated typing, not whether the tool designed the system.
+Being transparent that you're using Cursor's AI deliberately (Tab for boilerplate, Agent for scoped multi-file changes) is a fair, often positive signal — what matters to them is whether *you* made the architecture/pattern decisions (§1-§3) while the tool accelerated typing.
 
-## 6. Orchestration checklist (run through this during the actual build)
+## 6. Orchestration checklist
 
-1. **Read the prompt** — restate core entities/actions in 1-2 sentences, name the time budget and phase breakdown (§0) out loud.
-2. **Design (~10 min)** — §1: batch questions, sketch the simplest architecture that satisfies them, state goals/non-goals, run the pitfall scan and mark each item build-it or mention-it. Stop as soon as you have it; don't iterate the diagram.
-3. **Scaffold (~5 min)** — §4: copy files in, start Postgres+Redis, get both dev servers running before writing custom code. Confirm `/health` and the frontend root both load — catching a broken toolchain now costs 2 minutes, at minute 90 it costs the interview.
-4. **Backend (~45-50 min)** — §4.20 adapt pass + §2 pattern judgment. Run tests as you finish each endpoint, not all at the end. Checkpoint: by the midpoint, core flows reachable via `curl`/`/docs` even before the frontend exists.
+1. **Read the prompt** — restate entities/actions in 1-2 sentences, name the time budget/phases (§0) out loud.
+2. **Design (~10 min)** — §1: batch questions, sketch the simplest architecture, state goals/non-goals, run the pitfall scan. Stop as soon as you have it.
+3. **Scaffold (~5 min)** — §4: copy files in, start Postgres+Redis, get both dev servers running before writing custom code. Confirm `/health` and the frontend root load — catching a broken toolchain now costs 2 minutes, at minute 90 it costs the interview.
+4. **Backend (~45-50 min)** — §4.20 adapt pass + §2 judgment. Test each endpoint as you finish it. Checkpoint: by the midpoint, core flows reachable via `curl`/`/docs` even before the frontend exists.
 5. **Frontend (~30-40 min)** — golden path > loading/error > (no) polish, per §0's zero-CSS rule.
-6. **Defense prep (~10-15 min, can overlap with polish)** — make sure §3's answers are ready, grounded in the real code just written, not generic vocabulary.
-7. **Final pass (last ~10 min)** — exercise the full golden path in the browser, confirm both servers start cleanly from a fresh terminal, have a one-sentence close ready: what's built, what's explicitly out of scope and why, and the first three things you'd do next with more time.
+6. **Defense prep (~10-15 min, can overlap)** — §3's answers ready, grounded in the code just written.
+7. **Final pass (~10 min)** — exercise the golden path in the browser, confirm both servers start clean from a fresh terminal, have a one-sentence close ready: what's built, what's out of scope and why, first three next steps.
 
-**Boundaries**: don't let architecture discussion eat build time — lock it in and adjust as you build. Don't introduce infrastructure beyond Postgres+Redis unless asked live. If behind schedule, cut scope (fewer fields/endpoints/views) before cutting layering/testing habits — a smaller well-structured app outscores a larger messy one.
+**Boundaries**: don't let architecture discussion eat build time — lock it in and adjust as you build. Don't introduce infrastructure beyond Postgres+Redis unless asked live. If behind schedule, cut scope before cutting layering/testing habits — a smaller well-structured app outscores a larger messy one.
