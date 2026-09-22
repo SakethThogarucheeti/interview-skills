@@ -1,6 +1,6 @@
 ---
 name: interview-kit
-description: Self-contained kit for a timed build-and-deploy interview (DigitalOcean's format: 3h, pick from assigned prompts, deploy live before time's up, graded partly on catching AI-introduced race conditions/blocking calls rather than trusting them). Hard-gates one batched round of clarifying questions before any code, then commits to building without reopening it. Once design is locked, spawns a subagent to write design-decisions.md (HLD, LLD choices, pitfall-scan results, scaling and business-tradeoff notes) since the user, not the agent, answers the post-build walkthrough. Covers requirements/goal-scoping, a pitfall scan (SPOF, spiky traffic, write races, blocking async calls, missing indexes/pagination) re-run against every AI-generated diff, HLD talking points, SOLID/DRY/GoF LLD patterns, a complete copy-paste FastAPI+Postgres+Redis+React scaffold (every file inlined below), a DigitalOcean deployment section, a Cursor workflow bridge, and time-compression/git-discipline tactics throughout. Use as soon as the user shares the interview prompt and wants to build, asks about this interview's system design/scaling questions, wants the scaffold, needs to deploy to DigitalOcean, or asks about using Cursor for it. Everything needed lives in this one file — no other skill or template directory required.
+description: Self-contained kit for a timed build-and-deploy interview (DigitalOcean: 3h, pick from assigned prompts, deploy live before time's up, graded on catching AI-introduced race conditions/blocking calls). Gates one batched round of functional + non-functional clarifying questions before any code, then builds without reopening it; spawns a subagent to write design-decisions.md (HLD/LLD choices, pitfall-scan results, scaling/business tradeoffs) since the user, not the agent, answers the post-build walkthrough. Covers requirements/goal-scoping, a pitfall scan (SPOF, spiky traffic, write races, blocking async calls, missing indexes/pagination) re-run against every AI-generated diff, HLD talking points, SOLID/DRY/GoF patterns, a complete copy-paste FastAPI+Postgres+Redis+React scaffold (inlined below), a DigitalOcean deployment section, a Cursor workflow bridge, and time-compression/git-discipline tactics throughout. Use as soon as the user shares the interview prompt and wants to build, asks about this interview's system design/scaling, wants the scaffold, needs to deploy to DigitalOcean, or asks about using Cursor for it. Everything needed lives in this one file.
 ---
 
 # Interview kit — timed full-stack build
@@ -33,13 +33,35 @@ The real enemy in a 3-hour window is idle/serial time, not typing speed — and 
 
 **Once answered, stop asking and start building.** The gate fires exactly once, not per-decision. After the batch is answered (even partially), decide every remaining gap yourself (§0's "decide, don't deliberate") and move straight to design/build — no second round. Circling back costs more than a wrong default and reads as indecision. Exception: something that would force a visible do-over if guessed wrong (e.g. the prompt is ambiguous between two fundamentally different apps).
 
-Batch every open question; skip only what doesn't change scope, stating that assumption instead. Output a short, explicit goals/non-goals statement — a decision to hold the build to. Cover:
+**Ask for functional *and* non-functional requirements — explicitly, by name.** Most candidates ask only "what should it do" and get graded down for never establishing scale, latency, or consistency targets. Cover both categories in the one batch, and say the words "functional" and "non-functional" out loud — the interviewer is listening for whether you separate them.
+
+Batch every open question; skip only what doesn't change scope, stating that assumption instead. Output a short, explicit goals/non-goals statement — a decision to hold the build to.
+
+**Functional — always ask, these change what you build:**
 - **Core entities & actions** — create/read/update/delete what?
-- **Read vs write ratio** — most prompts (shorteners, polls, task boards, rate limiters) skew read-heavy or write-bursty; name which, it drives the caching story.
-- **Consistency** — strong (payments, inventory) or eventual (counts, feeds, likes)? Most prompts tolerate eventual.
-- **The specific spiky-traffic risk this prompt implies**, if any — naming it now targets the pitfall scan below.
-- **Non-goals** — what you're explicitly not building.
+- **The one golden-path user story** — what must demonstrably work end-to-end at the demo?
+- **Non-goals** — what you're explicitly not building (auth, multi-tenancy, admin UI…).
 - **What "deployed" means** — backend API only, or the frontend too? Changes the §4.21 deploy plan.
+
+**Non-functional — ask, but lead with your assumption.** Phrase each as "I'm assuming X unless you'd rather Y" so a non-answer still unblocks you. Only two genuinely change the design here:
+- **Scale** — concurrent users/RPS and data volume. Drives whether caching and pagination are build-it or mention-it.
+- **Consistency** — strong (payments, inventory, quotas) or eventual (counts, feeds, likes)? Most prompts tolerate eventual; the exceptions are exactly where the graded write race lives.
+
+Also name the prompt's specific spiky-traffic risk, if any — it targets the pitfall scan below.
+
+**Assume the rest without asking — state once, in one line, move on.** Asking about these reads as inexperience, not diligence. Revise only if the prompt or interviewer contradicts one:
+
+| NFR | Default to state |
+|---|---|
+| **Scale** | Demo scale — 10s-100s concurrent users, single region, fits one Postgres box. Seams (§2) make 10x a config change, not a rebuild. |
+| **Latency** | p95 < 200ms reads, < 500ms writes — justifies cache-aside, not more. |
+| **Availability** | Single instance, no HA/multi-AZ; the SPOF is named in §3, not hidden. |
+| **Durability** | Postgres is source of truth; Redis is disposable — losing it costs latency, never data. |
+| **Security** | Server-side validation/generated IDs; no authn/authz unless asked. Wide-open CORS is a named demo shortcut (§4.10). |
+| **Read/write mix** | Read-heavy, write-bursty — the shape of most prompts. Drives the caching story. |
+| **Observability** | `/health` + structured logs; no metrics/tracing stack in 3 hours. |
+
+Carry this table into `design-decisions.md` — "what did you assume, and what breaks at 100x?" is a standard walkthrough question this answers.
 
 ### Default architecture: "one box, clean seams"
 
@@ -62,7 +84,7 @@ Check the simple design against this list. Tag each **build it** (cheap, clearly
 |---|---|
 | **Single point of failure** — one app/DB/cache process | **Mention it.** Stateless app scales horizontally behind a load balancer as a config change; managed Postgres/Redis with failover is the prod answer. Don't build HA in this window. |
 | **Spiky/bursty traffic** on a specific endpoint the prompt implies (viral link, vote surge) | **Build it** if there's a genuinely hot endpoint: rate limiting (Decorator, ~10-15 min) + confirm that read path uses the cache-aside. Otherwise **mention it**. |
-| **Write races** — duplicate unique values, double-vote/booking, read-modify-write counters | **Build it** wherever the prompt has one: a DB unique constraint + conflict handling, or an atomic `UPDATE ... SET n = n + 1` instead of read-then-write. A correctness bug, not just a scaling nicety. |
+| **Write races** — duplicate unique values, double-vote/booking, read-modify-write counters, partial updates | **Build it** wherever the prompt has one: a DB unique constraint + conflict handling, or one atomic `UPDATE ... SET n = n + 1 ... RETURNING` instead of read-then-write. A correctness bug, not just a scaling nicety. **Worked example in the scaffold**: `repository.update_fields` (§4.5) does a partial update in a single statement precisely because the read → `model_copy` → `save` version loses one of two concurrent PATCHes *every single time* — copy that shape for any new mutating endpoint. |
 | **Unbounded list growth** — no pagination on a real list feature | **Build it**: basic `limit`/`offset`. Cheap now, awkward to bolt on later. |
 | **Missing index** on any non-PK lookup (by owner, code, status) | **Build it** — one `CREATE INDEX` line. |
 | **Trusting client input** for IDs/prices/ownership | **Build it**: generate/validate server-side (scaffold already does this for `Item.id`). |
@@ -78,6 +100,7 @@ If the prompt is small with none of the above genuinely in play, say so, keep it
 
 - **Cloud Resource Quota / Usage Limit Manager** — cap usage against a preset quota. The natural AI-generated bug is the write-race trap above: `check quota, then create` races under concurrency. Fix: one atomic statement — `UPDATE ... SET used = used + 1 WHERE used < limit RETURNING used`, not two steps.
 - **High-frequency telemetry / cache with origin-outage resilience** — must keep serving through an origin/DB outage instead of cascading the failure. Extend `app/cache.py`'s `get_or_set`: on loader failure, fall back to the last-known-good cached value (even past TTL), plus a small circuit breaker (stop calling after N failures, retry after a cooldown).
+- **Rate limiter with tier-based quotas** — sliding-window algorithm, free/pro tiers with different limits, sub-50ms responses, per-client concurrency safety. Store window state in Redis (`INCR` + `EXPIRE`, or a sorted set for a true sliding window), not in-process — the app is meant to scale horizontally and in-memory counters don't survive that. The graded trap here is the same check-then-act race as the quota manager: use `INCR`'s atomicity (or a Lua script for multi-step logic) instead of `GET` then compare-and-`SET`. Per-client key = tier lookup + fixed window/bucket math, no locks needed since Redis ops are already atomic.
 
 If told which prompt you drew, jump to the matching notes; otherwise the general scaffold and pitfall scan (§1/§2/§4) cover any prompt in this format.
 
@@ -87,6 +110,7 @@ The moment goals/non-goals, architecture, and the pitfall-scan calls are locked 
 
 Give the subagent the locked-in goals/non-goals, architecture, and every pitfall-scan row with its call and reasoning. Have it cover:
 - **Goals & non-goals** — what's in scope, and what was deliberately left out and why.
+- **Functional & non-functional requirements** — the functional list as confirmed, and the NFR table from §1 with every assumed default stated plainly, marking which were confirmed by the interviewer vs. assumed. "What did you assume, and what breaks at 100x?" is a standard walkthrough question.
 - **Architecture** — the diagram and why it beats the alternatives (microservices, queue, multi-region) at this scope.
 - **LLD choices** — which §2 patterns were used, and which were deliberately skipped.
 - **Pitfall-scan results** — every risk row, tagged build/mention, one sentence on the actual mitigation.
@@ -118,19 +142,19 @@ Keep it skimmable — bullets over prose, one screen per section. Refresh it as 
 
 Current state → bottleneck → concrete next step, grounded in the actual code just written, not generic vocabulary.
 
-**Traffic spike / going viral?** Current: single stateless FastAPI process; bottleneck: DB connections/CPU on one box. By effort: (a) horizontal scale — N stateless instances behind a load balancer, works immediately since there's no in-memory session state, (b) cache hot reads, (c) a queue to absorb write bursts async, (d) rate-limit/backpressure at the edge.
+**Traffic spike / going viral?** Current: single stateless FastAPI process; bottleneck: DB connections/CPU on one box. By effort: (a) horizontal scale — N stateless instances behind a load balancer, immediate since there's no in-memory session state, (b) cache hot reads, (c) a queue to absorb write bursts async, (d) rate-limit/backpressure at the edge.
 
-**How would you cache this?** Hot read path → cache key = lookup key → TTL or write-through invalidation. Redis from the start (`app/cache.py`) since an in-process cache doesn't stay consistent across N instances. Cache-aside: miss → read DB → populate → return (`Cache.get_or_set`). Mention cache stampede (fix: coalescing or jittered TTL). Fan-out → same Redis instance's pub/sub (`app/events.py`) before a dedicated broker.
+**How would you cache this?** Hot read path → cache key = lookup key → TTL or write-through invalidation. Redis from the start (`app/cache.py`) since an in-process cache doesn't stay consistent across N instances. Cache-aside: miss → read DB → populate → return (`Cache.get_or_set`). Mention cache stampede (coalescing or jittered TTL fixes it). Fan-out → Redis pub/sub (`app/events.py`) before a dedicated broker.
 
-**Scale the database?** First: indexes + the connection pool already in `PostgresItemRepository`. Second: read replicas — Postgres is already behind a repository interface, so routing reads to a replica is a swap at that seam. Third: sharding, only if pushed on very large scale — name the shard key and the cross-shard-query tradeoff.
+**Scale the database?** First: indexes + the connection pool already in `PostgresItemRepository`. Second: read replicas — Postgres is already behind a repository interface, so routing reads to a replica is a swap at that seam. Third: sharding, only if pushed on scale — name the shard key and the cross-shard-query tradeoff.
 
 **Consistency / race conditions?** Name the specific race in the actual app (counter increment, double-booking) and the fix: a unique constraint/transaction, `SELECT ... FOR UPDATE`, or an atomic increment — not a vague "add a lock." Strong consistency on core writes, eventual is fine for denormalized reads/counters.
 
-**Reliability?** Idempotency on retryable writes (idempotency key or upsert). Timeouts + backoff on outbound calls. Stateless app so a crashed instance is just replaced.
+**Reliability?** Idempotency key or upsert on retryable writes. Timeouts + backoff on outbound calls. Stateless app, so a crashed instance is just replaced.
 
 **Deploy/monitor?** Already done by the time it's asked (§4.21) — describe what you built: containerized (Dockerfile, §4), live on a DO Droplet/App Platform, structured logging + `/health`. Next step if pushed: N replicas behind a load balancer, latency/error-rate metrics, managed Postgres/Redis with failover.
 
-**Business trade-offs / "what would you do with more time" / downtime windows?** Expect this alongside the technical questions — DigitalOcean's writeup frames the post-build conversation as covering both. Ground it in what you actually cut: e.g. "I skipped read replicas and HA — no payoff at this scale, and the repository seam means adding one later is a config change, not a rewrite" (§2). For downtime: stateless app instances mean a rolling restart has zero downtime; a single non-replicated Postgres/Redis is the one real SPOF, and the honest answer is a maintenance window or a managed failover DB, not built here for time. Don't oversell what you didn't build — naming the real gap and its cost/benefit reads better than pretending it's handled.
+**Business trade-offs / "what would you do with more time" / downtime windows?** Expect this alongside the technical questions — DigitalOcean frames the post-build conversation as covering both. Ground it in what you actually cut, e.g. "skipped read replicas and HA — no payoff at this scale, and the repository seam (§2) makes adding one later a config change, not a rewrite." For downtime: stateless instances mean a rolling restart is zero-downtime; the one real SPOF is non-replicated Postgres/Redis, and the honest answer is a maintenance window or managed failover, not built here for time. Naming the real gap and its cost/benefit beats pretending it's handled.
 
 ## 4. Scaffold — copy these files verbatim, then adapt
 
@@ -253,6 +277,7 @@ class ItemUpdate(BaseModel):
 # touching services or routes -- this is the seam the scaling talking points
 # (section 3) point at.
 
+import threading
 from typing import Protocol
 from app.models import Item
 
@@ -261,6 +286,7 @@ class ItemRepository(Protocol):
     def list(self) -> list[Item]: ...
     def get(self, item_id: str) -> Item | None: ...
     def save(self, item: Item) -> None: ...
+    def update_fields(self, item_id: str, fields: dict) -> Item | None: ...
     def delete(self, item_id: str) -> bool: ...
 
 
@@ -271,6 +297,7 @@ class InMemoryItemRepository:
 
     def __init__(self) -> None:
         self._data: dict[str, Item] = {}
+        self._lock = threading.Lock()
 
     def list(self) -> list[Item]:
         return list(self._data.values())
@@ -280,6 +307,17 @@ class InMemoryItemRepository:
 
     def save(self, item: Item) -> None:
         self._data[item.id] = item
+
+    def update_fields(self, item_id: str, fields: dict) -> Item | None:
+        # Lock, not read-then-write: FastAPI runs these plain `def` handlers in a
+        # threadpool, so two concurrent PATCHes really do interleave here.
+        with self._lock:
+            item = self._data.get(item_id)
+            if item is None:
+                return None
+            updated = item.model_copy(update=fields)
+            self._data[item_id] = updated
+            return updated
 
     def delete(self, item_id: str) -> bool:
         return self._data.pop(item_id, None) is not None
@@ -321,6 +359,23 @@ class PostgresItemRepository:
                    ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, body = EXCLUDED.body""",
                 (item.id, item.title, item.body, item.created_at),
             )
+
+    def update_fields(self, item_id: str, fields: dict) -> Item | None:
+        """Partial update as ONE atomic statement -- NOT read-modify-write.
+        Two concurrent PATCHes to different fields both survive; the read-then-
+        write version silently loses one (this is precisely the graded write
+        race from section 1's pitfall table). COALESCE keeps any column whose
+        key is absent from `fields`; if a field must be settable to NULL, use a
+        sentinel or build the SET clause dynamically instead."""
+        if not fields:
+            return self.get(item_id)
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                """UPDATE items SET title = COALESCE(%s, title), body = COALESCE(%s, body)
+                   WHERE id = %s RETURNING id, title, body, created_at""",
+                (fields.get("title"), fields.get("body"), item_id),
+            ).fetchone()
+        return Item(id=row[0], title=row[1], body=row[2], created_at=row[3]) if row else None
 
     def delete(self, item_id: str) -> bool:
         with self._pool.connection() as conn:
@@ -441,11 +496,12 @@ class ItemService:
         return item
 
     def update_item(self, item_id: str, data: ItemUpdate) -> Item:
-        item = self._get_item_uncached(item_id)
-        updated = item.model_copy(
-            update={k: v for k, v in data.model_dump(exclude_unset=True).items()}
-        )
-        self._repo.save(updated)
+        # Delegates to the repository's atomic partial update rather than
+        # read -> model_copy -> save. The read-modify-write shape loses one of
+        # two concurrent PATCHes every time -- see repository.update_fields.
+        updated = self._repo.update_fields(item_id, data.model_dump(exclude_unset=True))
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Item not found")
         if self._cache:
             self._cache.invalidate(f"item:{item_id}")
         return updated
@@ -788,7 +844,7 @@ Check readiness with `tail -f /tmp/uvicorn.log` / `curl localhost:8000/health` i
 
 1. **`models.py`** — rename `Item`/`ItemCreate`/`ItemUpdate` to the real entity, change fields. Add a second entity module the same shape if the prompt has more than one resource.
 2. **`repository.py`** — rename the Protocol and classes, update the `CREATE TABLE`/SQL to the real schema, add query methods the prompt needs — keep them on the repository, not scattered in routes.
-3. **`service.py`** — the prompt's actual business rules live here. Drop the cache-aside call on `get_item` if the read pattern doesn't warrant it.
+3. **`service.py`** — the prompt's actual business rules live here. Drop the cache-aside call on `get_item` if the read pattern doesn't warrant it. Any *new* mutating operation goes through an atomic repository statement like `update_fields`, never read-then-write in the service — that's the graded bug (§1).
 4. **`main.py`** — rename routes, add any non-CRUD endpoints the prompt needs.
 5. **`api.js`** — rename client methods to match.
 6. **`App.jsx`** — replace the list/create UI with whatever view the prompt needs; keep the inline-styles-only rule.
@@ -799,7 +855,7 @@ Check readiness with `tail -f /tmp/uvicorn.log` / `curl localhost:8000/health` i
 
 ### 4.21 Deploy to DigitalOcean — required, ~20 min, do this with time to spare
 
-DigitalOcean's format requires the prototype live on their platform before the session ends — not just running locally. Fastest reliable path: one Droplet running the whole stack via Docker Compose, reusing `docker-compose.yml` (§4.3) plus one added service.
+DigitalOcean requires the prototype live on their platform, not just running locally. Fastest reliable path: one Droplet running the whole stack via Docker Compose, reusing `docker-compose.yml` (§4.3) plus one added service.
 
 ```bash
 # One-time, from your local machine (doctl already authenticated: `doctl auth init`)
@@ -812,6 +868,8 @@ timeout 300 doctl compute droplet create interview-app \
 timeout 120 rsync -av --exclude node_modules --exclude .venv --exclude __pycache__ \
   ./ root@<droplet-ip>:/root/app/ > /tmp/rsync.log 2>&1
 ```
+
+**Before deploying, delete the `ports:` blocks from the `postgres` and `redis` services.** They exist for local dev; on a Droplet they bind `0.0.0.0`, publishing Postgres (password `postgres`) and an unauthenticated Redis to the open internet — a DO Droplet has no firewall by default. The `app` service reaches both over the compose network by service name, so nothing breaks. An interviewer who port-scans the box you just handed them will find this.
 
 Add the backend as a third service in `backend/docker-compose.yml` (append, don't replace `postgres`/`redis`):
 ```yaml
@@ -833,9 +891,9 @@ timeout 10 curl http://<droplet-ip>/health   # confirm {"status":"ok"} before ca
 ```
 If the build is still running at the timeout, check `cat /tmp/deploy-build.log` (or `ssh root@<droplet-ip> "docker compose logs --tail 50"`) rather than re-running blind.
 
-For the frontend, if the interviewer expects it live too: point `frontend/vite.config.js`'s API proxy at `http://<droplet-ip>` and either build + serve the static output from the same Droplet (a tiny `nginx`/`serve` container) or run it locally against the deployed API — whichever §1's clarifying batch settled on. A deployed-but-broken app is worse than none, since it's the last thing the interviewer sees — always verify `/health` and one real request before defense prep.
+If the interviewer expects the frontend live too: point `vite.config.js`'s API proxy at `http://<droplet-ip>` and either build + serve the static output from the same Droplet (a tiny `nginx`/`serve` container) or run it locally against the deployed API — whichever §1's batch settled on. Always verify `/health` and one real request before defense prep; a deployed-but-broken app is worse than none.
 
-If a GitHub repo and DO Container Registry are already set up, App Platform (`doctl apps create --spec app.yaml` against a pushed image) is the on-brand alternative — use whichever you can execute fastest; the Droplet route just has the fewest moving pieces to fail.
+If a GitHub repo + DO Container Registry are already set up, App Platform (`doctl apps create --spec app.yaml`) is the on-brand alternative — use whichever executes fastest; the Droplet route has the fewest moving pieces to fail.
 
 ## 5. Using Cursor for the live build
 
@@ -853,7 +911,7 @@ alwaysApply: true
 
 # Interview build conventions
 
-React SPA -> FastAPI -> Postgres, with Redis for cache-aside on hot reads and
+React SPA -> FastAPI -> Postgres, Redis for cache-aside on hot reads and
 optionally pub/sub for fan-out. No microservices, message broker, or
 multi-region -- talking points, not build tasks, here.
 
@@ -862,18 +920,18 @@ logic, depends only on repository/cache Protocols) -> repository.py (only
 place touching Postgres) -> cache.py/events.py (Redis, wrapped) ->
 models.py (one Pydantic shape per concept) -> deps.py (wiring).
 
-Apply the Repository pattern to every entity by default. Reach for Strategy,
-Factory, Observer, Decorator, or Adapter only with two genuinely
-interchangeable implementations to justify it -- no interface with one
-implementation "for future extensibility."
+Repository pattern on every entity by default. Reach for Strategy, Factory,
+Observer, Decorator, or Adapter only with two genuinely interchangeable
+implementations to justify it -- no interface with one implementation "for
+future extensibility."
 
-Every new endpoint gets a smoke test using an in-memory repository via
+Every new endpoint gets a smoke test against an in-memory repository via
 APP_ENV=test, so tests never need live Postgres/Redis.
 
 Frontend: plain React + fetch via a single api.js client, one function per
-endpoint. Golden path > loading/error states > visual polish. Do NOT add a
-CSS framework, stylesheet, or custom colors/typography -- inline styles
-only, hard rule.
+endpoint. Golden path > loading/error states > visual polish. No CSS
+framework, stylesheet, or custom colors/typography -- inline styles only,
+hard rule.
 
 Timed build: no large refactors, no extra dependencies, no gold-plating.
 When a decision doesn't change the outcome, make it and move on. Never
@@ -884,27 +942,26 @@ The prototype must be deployed live on DigitalOcean before the session
 ends -- hard requirement, not a stretch goal. Budget time for it up front.
 
 Do not accept AI-generated code at face value. Before moving on from any
-generated chunk, check it for a check-then-act write race (should be one
+generated chunk, check for a check-then-act write race (should be one
 atomic DB statement) and a blocking sync call inside an async def (route
-handlers here are plain def on purpose so sync psycopg/redis calls are
-safe -- never mix). Catching these two is reported to be specifically what's
-graded.
+handlers are plain def on purpose so sync psycopg/redis calls are safe --
+never mix). Catching these two is reported to be specifically what's graded.
 
 Every command gets a timeout -- a hung install or network call should fail
 loud, not eat the clock silently. Anything backgrounded (uvicorn, npm run
-dev, docker compose) redirects output to a log file so progress is
-checkable with tail/grep instead of blocking on it. Scope greps/finds to
-the relevant directory, never the whole repo root.
+dev, docker compose) redirects output to a log file, checked with tail/grep
+instead of blocking on it. Scope greps/finds to the relevant directory,
+never the whole repo root.
 
 Use git. Add a .gitignore (.venv/, node_modules/, __pycache__/, *.pyc, .env)
 before the first commit, then commit at every milestone and every passing
 test -- scaffold in, each adapted file, each green test run, backend done,
 frontend done, deployed. Small frequent commits, not one at the end.
 
-Python deps and venv: uv only (uv venv, uv pip install, uv run) -- never bare
-pip, python -m venv, or `source .venv/bin/activate` (doesn't survive a new
-shell/tool call -- uv run doesn't need it). Already installed, drastically
-faster under time pressure.
+Python deps and venv: uv only (uv venv, uv pip install, uv run) -- never
+bare pip, python -m venv, or `source .venv/bin/activate` (doesn't survive a
+new shell/tool call -- uv run doesn't need it). Already installed, faster
+under time pressure.
 ```
 
 Pre-stage the §4 scaffold files too if the format allows a personal template repo (confirm with the interviewer first); if not, recreate the structure quickly from this file — the layering should be a habit going in, not looked up live.
@@ -919,7 +976,7 @@ Pre-stage the §4 scaffold files too if the format allows a personal template re
 
 ### 5.3 Use dead time: parallelize research instead of idling
 
-Any time blocked on something other than typing is wasted unless filled: open a second chat tab (or Background Agent) the moment you ask a clarifying question and research what comes next regardless of the answer. Batch questions (§0) so idle moments aren't recurring. Queue/write the next file while a slow command runs instead of watching the terminal. Don't let research become its own rabbit hole.
+Any time blocked on something other than typing is wasted unless filled: open a second chat tab (or Background Agent) the moment you ask a clarifying question and research what comes next regardless of the answer. Batch questions (§0) so idle moments don't recur. Queue/write the next file while a slow command runs instead of watching the terminal. Don't let research become its own rabbit hole.
 
 ### 5.4 What NOT to reach for live
 
@@ -927,13 +984,13 @@ Don't hand-tune Cursor settings/models mid-interview. Don't send Agent mode a la
 
 ### 5.5 Talking to the interviewer about tool use
 
-Being transparent that you're using Cursor's AI deliberately (Tab for boilerplate, Agent for scoped multi-file changes) is a fair, often positive signal — what matters is whether *you* made the architecture/pattern decisions (§1-§3) while the tool accelerated typing.
+Being transparent about using Cursor's AI deliberately (Tab for boilerplate, Agent for scoped multi-file changes) is a fair, often positive signal — what matters is whether *you* made the architecture/pattern decisions (§1-§3) while the tool accelerated typing.
 
 ## 6. Orchestration checklist
 
 1. **Pick the prompt, if given a list** — §1: favor a prepped pattern or the smallest clear scope.
 2. **Read the prompt** — restate entities/actions in 1-2 sentences, name the time budget (§0) out loud.
-3. **Ask once, then stop asking** — §1's batch of clarifying questions, in one shot. Wait for the answer (or explicit "use your judgment") before doing anything below — then don't reopen it.
+3. **Ask once, then stop asking** — §1's batch of clarifying questions, in one shot, covering **functional** and **non-functional** requirements (scale and consistency asked with a default lean; latency, availability, durability, security, read/write mix, observability assumed and stated in one line). Wait for the answer (or explicit "use your judgment") before doing anything below — then don't reopen it.
 4. **Design (~10 min)** — §1: sketch the simplest architecture, state goals/non-goals, run the pitfall scan. The moment this is locked in, spawn the background subagent that writes `design-decisions.md` — don't wait for it, move to scaffolding.
 5. **Scaffold (~5 min)** — §4: copy files in, add `.gitignore` + `git init` + commit (§4.19), start Postgres+Redis, get both dev servers running. Confirm `/health` and the frontend root load. Commit again once it all works.
 6. **Backend (~50-60 min)** — §4.20 adapt pass + §2 judgment. Test each endpoint as you finish it. Before accepting any AI-generated chunk, check it against §1's pitfall table, especially the write-race and blocking-call rows — that check is what's graded. Commit after each adapted file and after every passing `test_smoke.py` run.
