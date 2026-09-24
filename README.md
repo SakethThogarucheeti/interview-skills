@@ -4,20 +4,38 @@ A kit for DigitalOcean's timed build-and-deploy interview: 3 hours to build a RE
 (data ingestion + processing), deploy it live on DigitalOcean, then defend the design.
 It works with Claude Code or Cursor inside the provided Ubuntu 24 container.
 
-## Game day
+**Game day: paste this repo's URL into the agent chat and say "set this up".** The agent follows the section below.
+
+## AI agent: set this up
+
+You were given this repo's URL in an interview environment (VS Code/Cursor bridged to an Ubuntu 24
+container). Do all of the following yourself in the terminal. The user should only click links, paste
+the DigitalOcean token when you ask, and then paste the interview prompt.
+
+1. **Get the kit:** `git clone -q --depth 1 https://github.com/SakethThogarucheeti/interview-skills ~/prep`
+   (skip if `~/prep` exists).
+2. **Build the project in the folder open in the editor:** `~/prep/interview-kit/into-project.sh "$PWD"`.
+   It needs an empty folder (editor/git dotdirs are fine). If the open folder has other files or is the home
+   directory, run `~/prep/interview-kit/into-project.sh ~/app` instead, and tell the user to open `~/app`
+   (File > Open Folder) and say "continue setup" in a new chat there.
+3. **Clear the "still needs you" list that `./preflight.sh` prints,** one item at a time, re-running
+   `./preflight.sh` after each:
+   - GitHub login: preflight starts it and prints a code; give the user the link and the code.
+   - DigitalOcean: ask for the provided API token, then run `DO_TOKEN='<token>' ./preflight.sh`. Never echo it.
+   - Preflight then sets the git identity, creates and pushes the private GitHub repo, and starts
+     Terraform (managed Postgres + Valkey, ~6 min) in the background.
+   - The one step that can't be scripted: give the user the DigitalOcean console click-path it prints.
+4. **Hand over:** read `AGENTS.md` and `.kit/SKILL.md`, confirm setup in 2–3 lines, and ask for the
+   interview prompt. From then on, `AGENTS.md` drives.
+
+## Manual setup (same thing, by hand)
 
 ```bash
-gh auth login                                                    # if needed
-gh repo clone SakethThogarucheeti/interview-skills ~/prep -- --depth 1 -q
-~/prep/interview-kit/into-project.sh ~/app                       # project + playbook + git + preflight
+git clone -q --depth 1 https://github.com/SakethThogarucheeti/interview-skills ~/prep
+~/prep/interview-kit/into-project.sh ~/app          # project + playbook + git + preflight
 ```
-Do what preflight lists under "still needs you" (`doctl auth init`, the GitHub link in the DO console),
-then open `~/app`:
-- **Cursor:** File > Open Folder → `~/app`, then send `/interview` plus the prompt in Agent chat.
-- **Claude Code:** `cd ~/app && claude`, then paste the prompt.
-
-Both tools load `~/app/AGENTS.md` (the rules, plus a pointer to the playbook in `~/app/.kit/`).
-Nothing else needs installing or configuring.
+Then do what preflight lists, and open `~/app` (Cursor: File > Open Folder, then `/interview` plus the
+prompt; Claude Code: `cd ~/app && claude`). Both tools load `~/app/AGENTS.md`.
 
 ## What's in `interview-kit/`
 
@@ -32,4 +50,4 @@ All three deploy paths (App Platform from GitHub, CI-built image, Droplet) were 
 and pass `make e2e`, including auth and the rate limit.
 
 Before the day: read `SKILL.md` §0–§2 and `reference/live-build.md`, and ask the recruiter whether
-you can clone a personal repo in the container (§0). If you can't, §5.1 covers working without the kit.
+you can clone a public repo in the container (§0). If you can't, §5.1 covers working without the kit.

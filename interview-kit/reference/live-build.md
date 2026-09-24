@@ -12,7 +12,7 @@ Either way, keep Tab/Copilot completions for small edits.
 
 ### 5.1 If you can't bring the kit
 
-This depends on recruiter question 5 (§0). If you can't clone a personal repo, create `AGENTS.md` first from memory: the layers, the two audits (atomic writes, no blocking calls in `async def`), `make check` then commit, deploy early. Know `scaffold/AGENTS.md` well enough to retype a short version. Then have the Agent generate §4 one layer at a time with the prompt below, reviewing every file against the pitfall table.
+This depends on recruiter question 5 (§0). If you can't clone a public repo, create `AGENTS.md` first from memory: the layers, the two audits (atomic writes, no blocking calls in `async def`), `make check` then commit, deploy early. Know `scaffold/AGENTS.md` well enough to retype a short version. Then have the Agent generate §4 one layer at a time with the prompt below, reviewing every file against the pitfall table.
 
 **Scaffold prompt for Agent (Cmd+I)**, used only when you can't bring §4's files. Send one message per step, and review and run `make check` between steps:
 1. "Create backend/ with requirements.txt (fastapi, uvicorn[standard], pydantic, python-multipart, psycopg[binary], psycopg-pool, redis, prometheus-client), requirements-dev.txt (pytest, httpx, ruff), a Makefile with install/up/run/test/test-int/lint/fmt/check/deploy/app-deploy/deployed targets using `uv run` (GIT_SHA from git passed as a Docker build arg), pytest.ini, ruff.toml, a non-root Dockerfile with a /health HEALTHCHECK, and docker-compose.yml (postgres, redis with healthchecks, app) plus a docker-compose.override.yml that publishes postgres/redis on 127.0.0.1 only."

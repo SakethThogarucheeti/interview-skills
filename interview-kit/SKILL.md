@@ -9,10 +9,10 @@ description: Kit for DigitalOcean's timed build-and-deploy interview (3h: build 
 
 This file may have been pasted in alone. Everything else lives in the repo, and one command turns it into a ready project for Cursor or Claude Code (~30 s):
 ```bash
-gh auth status >/dev/null 2>&1 || gh auth login      # private repo: device code, finish in the browser
-gh repo clone SakethThogarucheeti/interview-skills ~/prep -- --depth 1 -q
+git clone -q --depth 1 https://github.com/SakethThogarucheeti/interview-skills ~/prep
 ~/prep/interview-kit/into-project.sh ~/app            # scaffold + this playbook in ~/app/.kit + git init + ./preflight.sh
 ```
+(Agents: the repo README's "AI agent: set this up" section is the full procedure, including clearing preflight's list for the user.)
 Then work in `~/app` (Cursor: File > Open Folder; Claude Code: `cd ~/app && claude`). Its `AGENTS.md` is the always-on rule set and points back here (`.kit/SKILL.md`). In that project, `reference/` means `.kit/reference/`, and the scaffold is already in the project root, so skip §4's copy step.
 
 This file holds what's needed from minute one (brief, tactics, requirements gate, pitfall audit, LLD, checklist). Deeper material is in `reference/` and the code in `scaffold/`, both beside this file; read them when the step arrives (index before §6). Flow: requirements → design → LLD → scaffold → deploy → verbal defense. Claude Code is permitted live, so this kit can drive the actual build in the container (§5).

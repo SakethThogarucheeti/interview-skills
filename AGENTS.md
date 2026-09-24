@@ -1,5 +1,5 @@
 # interview-skills (prep repo)
 
-This is the prep repo, not a project to build in. If the user pastes an interview prompt here, don't write
-code in this folder: tell them to run `interview-kit/into-project.sh ~/app` and open `~/app` (Cursor: File >
-Open Folder; Claude Code: `cd ~/app && claude`). That folder has its own AGENTS.md and the playbook in `.kit/`.
+This is the prep kit, not a project to build in. If the user wants to set up for the interview or pastes an
+interview prompt, follow "AI agent: set this up" in README.md: it builds the real project (in the folder the
+editor has open, or ~/app) and that project's own AGENTS.md takes over.
