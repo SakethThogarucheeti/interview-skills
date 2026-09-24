@@ -18,6 +18,9 @@ the DigitalOcean token when you ask, and then paste the interview prompt.
    It needs an empty folder (editor/git dotdirs are fine). If the open folder has other files or is the home
    directory, run `~/prep/interview-kit/into-project.sh ~/app` instead, and tell the user to open `~/app`
    (File > Open Folder) and say "continue setup" in a new chat there.
+   **Update: if the host isn't Ubuntu** (no `apt`/`dpkg`, e.g. Arch or macOS), do steps 3-4 inside the dev container the
+   scaffold ships: prefix commands with `./dev.sh` (`./dev.sh ./preflight.sh`, `./dev.sh bash -c 'cd backend && make check'`).
+   It has `doctl`, `terraform`, `gh`, `uv`, Postgres and Redis preinstalled and reuses the host's `gh` login.
 3. **Clear the "still needs you" list that `./preflight.sh` prints,** one item at a time, re-running
    `./preflight.sh` after each:
    - GitHub login: preflight starts it and prints a code; give the user the link and the code.
@@ -34,6 +37,7 @@ the DigitalOcean token when you ask, and then paste the interview prompt.
 git clone -q --depth 1 https://github.com/SakethThogarucheeti/interview-skills ~/prep
 ~/prep/interview-kit/into-project.sh ~/app          # project + playbook + git + preflight
 ```
+Not on Ubuntu? Then `cd ~/app && ./dev.sh ./preflight.sh` runs it all in an `ubuntu:24.04` container with `doctl` installed.
 Then do what preflight lists, and open `~/app` (Cursor: File > Open Folder, then `/interview` plus the
 prompt; Claude Code: `cd ~/app && claude`). Both tools load `~/app/AGENTS.md`.
 
@@ -44,6 +48,7 @@ prompt; Claude Code: `cd ~/app && claude`). Both tools load `~/app/AGENTS.md`.
 | `SKILL.md` | The playbook (~8k tokens): brief, question gate, pitfall audit, design, checklist, game-day budget |
 | `reference/` | Read on demand: scaffold file map, deploy paths + IaC, talking points, DO products, live-build tips |
 | `scaffold/` | Verified FastAPI + Postgres + Redis app with ingestion worker, API-key auth + rate limit, tests, CI, Terraform, App Platform specs, `preflight.sh`, `make e2e`, `AGENTS.md` |
+| `scaffold/dev.sh` + `.devcontainer/` | Update: Ubuntu 24 dev container (doctl, terraform, gh, uv, Postgres, Redis) for hosts that aren't Ubuntu; `./dev.sh <cmd>` runs in it |
 | `into-project.sh` | The one setup command above |
 
 All three deploy paths (App Platform from GitHub, CI-built image, Droplet) were run live on DigitalOcean

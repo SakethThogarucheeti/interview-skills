@@ -33,6 +33,7 @@ Say it out loud when you catch one: "this read-then-write loses updates under co
 - `make` is the command surface (uv underneath; never bare `pip` or `source .venv/bin/activate`).
   `make check` green → commit, after every file. New behavior = a test in the same commit;
   new counter/quota/aggregate = a concurrency test like `tests/test_concurrency.py`.
+- Host isn't Ubuntu (no apt)? Run commands through the dev container: `./dev.sh <cmd>` (doctl, terraform, gh, uv, Postgres, Redis inside; project mounted; :8000 published). Inside the interview's own container, run them directly.
 - Every command gets a timeout. Anything slow runs in the background with a log file you `tail`.
   No Docker daemon: `make up-native`.
 - Deploy early and at each milestone (path A: `git push` to main). Verify with `make deployed` and `make e2e URL=…`.

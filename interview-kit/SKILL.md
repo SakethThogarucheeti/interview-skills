@@ -12,6 +12,8 @@ This file may have been pasted in alone. Everything else lives in the repo, and 
 git clone -q --depth 1 https://github.com/SakethThogarucheeti/interview-skills ~/prep
 ~/prep/interview-kit/into-project.sh ~/app            # scaffold + this playbook in ~/app/.kit + git init + ./preflight.sh
 ```
+**Update: host isn't the interview's Ubuntu 24 container** (your own Arch/macOS/other laptop, where `apt`/`dpkg` are missing and preflight's installs fail). After `into-project.sh`, run everything in a dev container instead: `cd ~/app && ./dev.sh ./preflight.sh` (then `./dev.sh bash -c 'cd backend && make install check up-native'`, or `./dev.sh` for a shell). It is `ubuntu:24.04` with `doctl`, `terraform`, `gh`, `uv`, Postgres and Redis preinstalled, the host's `gh` login passed in as `GH_TOKEN`, `~/.api_keys.env` shared, doctl auth kept in a volume and the API on `:8000`. Inside the real interview container skip this; preflight installs `doctl`/`terraform` itself (arch-aware, no `dpkg`).
+
 (Agents: the repo README's "AI agent: set this up" section is the full procedure, including clearing preflight's list for the user.)
 Then work in `~/app` (Cursor: File > Open Folder; Claude Code: `cd ~/app && claude`). Its `AGENTS.md` is the always-on rule set and points back here (`.kit/SKILL.md`). In that project, `reference/` means `.kit/reference/`, and the scaffold is already in the project root, so skip §4's copy step.
 
@@ -22,7 +24,7 @@ This file holds what's needed from minute one (brief, tactics, requirements gate
 **This session's brief (from the recruiter):**
 - **The task:** "build and deploy a functional **REST API** service that handles **data ingestion and processing**". So the default is API-only, and the §4.20 ingestion add-on is the likely core.
 - **Language:** Go, Python, Java or TypeScript/Node. This kit is Python.
-- **Environment:** a provided laptop running **VS Code or Cursor, bridged to an Ubuntu 24 Docker container**. Passwordless `sudo` (apt/brew). Preinstalled: `gh`, `doctl`, `s3cmd`, `jq`, `yq`, neovim. Not listed, so assume absent until preflight (§4.17): Docker inside the container, Terraform, `uv`.
+- **Environment:** a provided laptop running **VS Code or Cursor, bridged to an Ubuntu 24 Docker container**. Passwordless `sudo` (apt/brew). Preinstalled: `gh`, `doctl`, `s3cmd`, `jq`, `yq`, neovim. Not listed, so assume absent until preflight (§4.17): Docker inside the container, Terraform, `uv`. (Preflight installs `doctl`, Terraform and `uv` if missing; on a non-Ubuntu host use `./dev.sh`, see Setup.)
 - **AI:** GitHub Copilot, **Claude Code** and Cursor are all permitted, plus Chrome and docs. You own every generated line (§1's audit). Cursor Enterprise's built-in models are Claude 3.7 Sonnet / GPT-4o with privacy mode on.
 - **Cloud:** DigitalOcean credits provided, and deploying during the session is expected.
 

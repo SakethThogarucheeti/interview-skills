@@ -27,7 +27,9 @@ else
   echo "  git add -A && git commit -m 'Scaffold from interview-kit'"
 fi
 echo
-./preflight.sh
+if command -v apt-get >/dev/null; then ./preflight.sh; else
+  echo "no apt here (not Ubuntu): run the setup in the dev container instead ->  cd $DEST && ./dev.sh ./preflight.sh"
+fi
 echo
 if [ "$PWD" = "$(cd "$HERE" && pwd)" ]; then
   echo "built in the open folder: clear the 'still needs you' list, then paste the interview prompt"

@@ -23,6 +23,7 @@ Read a file when you're about to change it or explain it, not up front: the map 
 | 4.1 | `backend/requirements.txt`, `requirements-dev.txt` | Minimum-version runtime deps in the image; test/lint tools only in dev |
 | 4.2 | `backend/Dockerfile`, `.dockerignore` | Slim, non-root, `/health` HEALTHCHECK; `GIT_SHA`/`BUILD_TIME` build args → env + OCI `revision` label |
 | 4.3 | `backend/docker-compose.yml`, `docker-compose.override.yml` | Postgres + Redis with healthchecks, app, worker. The override (auto-merged locally) publishes DB/Redis on 127.0.0.1; `make deploy` uses `-f docker-compose.yml` only, so on a Droplet just the app port is reachable |
+| 4.17 | `dev.sh`, `.devcontainer/Dockerfile` | **Update:** for a non-Ubuntu host. `./dev.sh <cmd>` builds/starts an `ubuntu:24.04` container (doctl, terraform, gh, uv, Postgres, Redis baked in; project bind-mounted; host `gh` token passed as `GH_TOKEN`; `~/.api_keys.env` shared; doctl auth in the `app-dev-doctl` volume; port 8000) and runs `<cmd>` in it |
 | 4.4 | `backend/Makefile`, `pytest.ini`, `ruff.toml`, `preflight.sh`, `backend/e2e.py` | The one command surface: `install up up-native run test test-int lint fmt check image deploy deployed e2e preflight api-key app-create app-status app-deploy app-rollback`. Install, rsync/ssh and `doctl` steps have timeouts (skipped if neither `timeout` nor `gtimeout` exists). Recipe lines need real tabs if you ever retype it |
 | 4.5 | `app/config.py` | Frozen `Settings` from env, parsed once at startup (a bad value fails fast); `REDIS_URL=""` disables the cache; `GIT_SHA`/`BUILD_TIME` |
 | 4.6 | `app/observability.py` | JSON log lines with `request_id` + `version`; request-ID middleware (`x-request-id`); Prometheus counter/histogram labeled by route *template*; `app_build_info{git_sha}`; `x-app-version` header |
@@ -48,8 +49,9 @@ Read a file when you're about to change it or explain it, not up front: the map 
 for t in git python3 uv docker make gh doctl terraform jq node; do printf '%-9s' $t; command -v $t >/dev/null && echo ok || echo MISSING; done
 docker info >/dev/null 2>&1 && echo "docker daemon ok" || echo "docker daemon DOWN (expected in a container: use make up-native)"
 ```
+- **Not on Ubuntu (Arch, macOS, …)** — `apt`/`dpkg` are missing, so the installs below fail. Use the dev container: `./dev.sh ./preflight.sh`, then `./dev.sh bash -c 'cd backend && make install check up-native'`. Everything in this section then runs unchanged inside it. Preflight itself installs `doctl` (GitHub release) and Terraform (arch via `uname -m`) when missing.
 - **No `uv`:** `curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH=$HOME/.local/bin:$PATH`.
-- **No `terraform`:** `curl -fsSLo /tmp/tf.zip https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_$(dpkg --print-architecture).zip && sudo unzip -oq /tmp/tf.zip -d /usr/local/bin` (`sudo apt-get install -y unzip` first if missing). Or skip Terraform entirely (the dev-database route in §4.19).
+- **No `terraform`:** `curl -fsSLo /tmp/tf.zip https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip` (`arm64` on ARM) && sudo unzip -oq /tmp/tf.zip -d /usr/local/bin` (`sudo apt-get install -y unzip` first if missing). Or skip Terraform entirely (the dev-database route in §4.19).
 - **No Docker daemon (likely):** don't fight Docker-in-Docker. `make up-native` installs Postgres + Redis with apt and starts them on the same URLs compose uses, so `make run`, `make test-int` and the worker work unchanged (verified in `ubuntu:24.04`: ~30 s). Deploy with a path where DigitalOcean builds the image (§4.19 A/B/C). `make up`, `make image` and `make app-deploy` need Docker.
 
 Then, after the copy step at the top of §4 (`.gitignore` comes with it):

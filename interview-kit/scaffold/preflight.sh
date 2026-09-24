@@ -16,14 +16,20 @@ need() { printf '  TODO  %s\n' "$1"; todo+=("$2"); }
 
 echo "tools"
 export PATH="$HOME/.local/bin:$PATH"
-for t in git python3 make gh doctl jq curl; do command -v $t >/dev/null && ok "$t" || need "$t missing" "sudo apt-get install -y $t"; done
+ARCH=$(case $(uname -m) in x86_64) echo amd64;; aarch64|arm64) echo arm64;; esac)  # no dpkg outside Debian/Ubuntu
+for t in git python3 make gh jq curl; do command -v $t >/dev/null && ok "$t" || need "$t missing" "sudo apt-get install -y $t"; done
+if ! command -v doctl >/dev/null; then  # not in Ubuntu's repos: latest GitHub release
+  v=$(curl -fsSL https://api.github.com/repos/digitalocean/doctl/releases/latest 2>/dev/null | jq -r '.tag_name // empty' | tr -d v)
+  [ -n "$v" ] && curl -fsSL "https://github.com/digitalocean/doctl/releases/download/v$v/doctl-$v-linux-$ARCH.tar.gz" | sudo tar -xz -C /usr/local/bin doctl \
+    && fix "doctl $v installed" || need "doctl install failed" "get it from https://github.com/digitalocean/doctl/releases (linux-$ARCH) into /usr/local/bin"
+else ok "doctl"; fi
 if ! command -v uv >/dev/null; then
   curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1 && fix "uv installed (~/.local/bin; new shells: export PATH=\$HOME/.local/bin:\$PATH)" || need "uv install failed" "curl -LsSf https://astral.sh/uv/install.sh | sh"
 else ok "uv"; fi
 if [ "${TF:-1}" != 0 ] && ! command -v terraform >/dev/null; then
   command -v unzip >/dev/null || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq unzip >/dev/null 2>&1
-  curl -fsSLo /tmp/tf.zip "https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_$(dpkg --print-architecture).zip" \
-    && sudo unzip -oq /tmp/tf.zip -d /usr/local/bin && fix "terraform installed" || need "terraform install failed" "see reference/scaffold.md 4.17, or TF=0 and use a dev database"
+  curl -fsSLo /tmp/tf.zip "https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_$ARCH.zip" \
+    && sudo unzip -oq /tmp/tf.zip -d /usr/local/bin && fix "terraform installed" || need "terraform install failed" "see reference/scaffold.md 4.17 (on a non-Ubuntu host use ./dev.sh), or TF=0 and use a dev database"
 elif command -v terraform >/dev/null; then ok "terraform"; fi
 command -v node >/dev/null && ok "node" || echo "  --    node (only needed for a frontend)"
 docker info >/dev/null 2>&1 && ok "docker daemon" || echo "  --    no docker daemon (expected in the container: make up-native; DO builds the images)"
