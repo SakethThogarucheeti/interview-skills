@@ -2,7 +2,17 @@
 
 ## 4. Scaffold — `scaffold/`, copy it in, then adapt
 
-The code lives in **`scaffold/`**, beside `SKILL.md` (e.g. `~/.claude/skills/interview-kit/scaffold/`, or `interview-kit/scaffold/` in the repo). Copy the whole tree into the empty project root, dotfiles included, and adapt per §4.18:
+The code lives in **`scaffold/`**, beside `SKILL.md` (e.g. `~/.claude/skills/interview-kit/scaffold/`, or `interview-kit/scaffold/` in the repo). Copy the whole tree into the empty project root, dotfiles included, and adapt per §4.18.
+
+**Cursor (new login):** one script so the app folder has the skill, `AGENTS.md`, rules, and `/interview` — then **Open Folder** on that dir, not the prep clone:
+```bash
+<skill-dir>/into-project.sh ~/app
+# then: File > Open Folder → ~/app
+./strip-ingest.sh                    # ONLY if the prompt is not ingestion/processing (removes §4.20)
+rm -rf frontend                      # unless §1 said a UI is required (§4.16)
+```
+
+**Claude Code / already inside an empty dir:**
 ```bash
 cp -R <skill-dir>/scaffold/. .       # the trailing /. copies .github/ .do/ .cursor/ .gitignore too
 ./strip-ingest.sh                    # ONLY if the prompt is not ingestion/processing (removes §4.20)
@@ -24,7 +34,7 @@ Read a file when you're about to change it or explain it, not up front: the map 
 | 4.1 | `backend/requirements.txt`, `requirements-dev.txt` | Minimum-version runtime deps in the image; test/lint tools only in dev |
 | 4.2 | `backend/Dockerfile`, `.dockerignore` | Slim, non-root, `/health` HEALTHCHECK; `GIT_SHA`/`BUILD_TIME` build args → env + OCI `revision` label |
 | 4.3 | `backend/docker-compose.yml`, `docker-compose.override.yml` | Postgres + Redis with healthchecks, app, worker. The override (auto-merged locally) publishes DB/Redis on 127.0.0.1; `make deploy` uses `-f docker-compose.yml` only, so on a Droplet just the app port is reachable |
-| 4.4 | `backend/Makefile`, `pytest.ini`, `ruff.toml` | The one command surface: `install up up-native run test test-int lint fmt check image deploy deployed api-key app-create app-status app-deploy app-rollback`. Install, rsync/ssh and `doctl` steps have timeouts (skipped if neither `timeout` nor `gtimeout` exists). Recipe lines need real tabs if you ever retype it |
+| 4.4 | `backend/Makefile`, `pytest.ini`, `ruff.toml`, `preflight.sh`, `backend/e2e.py` | The one command surface: `install up up-native run test test-int lint fmt check image deploy deployed e2e preflight api-key app-create app-status app-deploy app-rollback`. Install, rsync/ssh and `doctl` steps have timeouts (skipped if neither `timeout` nor `gtimeout` exists). Recipe lines need real tabs if you ever retype it |
 | 4.5 | `app/config.py` | Frozen `Settings` from env, parsed once at startup (a bad value fails fast); `REDIS_URL=""` disables the cache; `GIT_SHA`/`BUILD_TIME` |
 | 4.6 | `app/observability.py` | JSON log lines with `request_id` + `version`; request-ID middleware (`x-request-id`); Prometheus counter/histogram labeled by route *template*; `app_build_info{git_sha}`; `x-app-version` header |
 | 4.7 | `app/errors.py` | `AppError` → NotFound/Conflict/PayloadTooLarge/Unavailable; one envelope `{error:{code,message,request_id,details}}` for domain, validation, HTTP, DB-down (503) and unhandled (500, no leak) errors |
@@ -44,7 +54,7 @@ Read a file when you're about to change it or explain it, not up front: the map 
 
 ### 4.17 Setup commands
 
-**Preflight the container first (~1 min).** Don't assume anything beyond the listed preinstalls:
+**Preflight the container first (~1 min): `./preflight.sh`** from the project root automates all of this plus auth checks, key generation and a background `terraform apply` (re-run it any time; it skips what's done). The manual equivalent, if it can't run:
 ```bash
 for t in git python3 uv docker make gh doctl terraform jq node; do printf '%-9s' $t; command -v $t >/dev/null && echo ok || echo MISSING; done
 docker info >/dev/null 2>&1 && echo "docker daemon ok" || echo "docker daemon DOWN (expected in a container: use make up-native)"

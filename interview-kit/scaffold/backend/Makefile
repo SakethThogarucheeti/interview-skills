@@ -1,5 +1,5 @@
 # One entry point for humans and CI alike -- the CI workflow calls these targets.
-.PHONY: install up up-native run test test-int lint fmt check image deploy deployed api-key app-create app-status app-deploy app-rollback
+.PHONY: preflight install up up-native run test test-int lint fmt check image deploy deployed e2e api-key app-create app-status app-deploy app-rollback
 DB ?= postgresql://postgres:postgres@localhost:5432/app
 REDIS ?= redis://localhost:6379/15
 # Every image is stamped with the commit it was built from (served at /version).
@@ -23,6 +23,8 @@ to = $(if $(TIMEOUT),$(TIMEOUT) $(1))
 fill = sed -e 's|$${GITHUB_REPO}|$(REPO)|g' -e 's|$${IMAGE_TAG}|$(1)|g' -e "s|\$${API_KEYS}|$$API_KEYS|g" $(2)
 need-keys = @test -n "$$API_KEYS" || { echo 'export API_KEYS=name:key,... first (make api-key NAME=you)'; exit 1; }
 
+preflight:  # game-day minute 0: tools, auth, keys, background terraform, then a human checklist
+	@../preflight.sh
 install:
 	$(call to,60) uv venv -q --allow-existing .venv
 	$(call to,180) uv pip install -q -r requirements-dev.txt
@@ -71,6 +73,9 @@ deployed:  # is live == local HEAD? URL defaults to this App Platform app; pass 
 	elif [ "$$live-dirty" = "$(GIT_SHA)" ]; then echo "LIVE = HEAD, plus uncommitted local changes"; \
 	else echo "DIFFERENT -- changes since live:"; \
 	git log --oneline $$live..HEAD 2>/dev/null || echo "(live sha not in local history)"; fi
+e2e:  # make e2e [URL=...] [KEY=...] -- 40-ish live checks incl. auth, races, rate limit (key: KEY or first of $$API_KEYS)
+	@test -n "$(URL)" || { echo "no URL: pass URL=... (or create the app first)"; exit 1; }
+	python3 e2e.py $(URL)
 api-key:  # make api-key NAME=alice -> one name:key entry for API_KEYS (comma-join several)
 	@python3 -c 'import secrets, sys; print(sys.argv[1] + ":" + secrets.token_urlsafe(24))' $(or $(NAME),client)
 # make app-create -- App Platform builds from your GitHub repo (REPO defaults to the

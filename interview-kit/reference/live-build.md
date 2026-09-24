@@ -8,18 +8,30 @@ curl -fsSL https://claude.ai/install.sh | bash      # or: npm install -g @anthro
 gh auth login && gh repo clone <you>/<prep-repo> ~/prep && mkdir -p ~/.claude/skills && cp -R ~/prep/interview-kit ~/.claude/skills/
 claude                                              # log in with your own account, then ask it to use interview-kit
 ```
-If that's blocked (no personal login allowed, or no network to claude.ai), use Cursor or Copilot as below. Either way, keep Cursor Tab/Copilot completions for small edits.
+If that's blocked (no personal login allowed, or no network to claude.ai), use Cursor as below. Either way, keep Tab/Copilot completions for small edits.
 
-**If using Cursor's built-in models** (recruiter's first note):
-- **Models:** built-in Claude 3.7 Sonnet and GPT-4o. Pick Claude 3.7 Sonnet for Agent/multi-file work and stop thinking about it (§5.4). Both are older models, so expect confident race conditions and blocking calls: the §1 audit matters more, not less.
-- **Privacy mode is on:** no effect on the workflow, except Background Agents may be unavailable. Use a second chat tab for §5.3 instead.
-- **Shortcuts they named:** **Cmd+L** chat (`@codebase` for repo-wide questions), **Cmd+K** inline edit on a selection, **Cmd+I** Composer/Agent (multi-file edits + terminal). Use Cmd on macOS, Ctrl elsewhere.
+**Cursor on a new laptop + new login (the actual interview machine).**
+Nothing from your home Cursor account is there: no user skills, user rules, MCP, model defaults, or Background Agents. **Only the folder you Open** is the kit. Recruiter question 5 (§0) is what makes this possible — you must be allowed to clone this repo.
+
+```bash
+gh auth status >/dev/null 2>&1 || gh auth login          # your GitHub, device code
+gh repo clone SakethThogarucheeti/interview-skills ~/prep -- --depth 1 -q
+~/prep/interview-kit/into-project.sh ~/app
+```
+Then **File > Open Folder → `~/app`** (not `~/prep`, not the home directory). First Agent message: `/interview` and paste the prompt. That folder already has `AGENTS.md`, `.cursor/skills/interview-kit/` (full playbook + `reference/`), `.cursor/rules/interview-conventions.mdc`, and `.cursor/commands/interview.md`.
+
+Do **not** log into your personal Cursor account unless they say you may — Enterprise login is expected. Do **not** spend time on Settings. Do **not** install MCP.
+
+**If using Cursor's built-in / Enterprise models:**
+- Use whatever Agent model they give you and stop switching. Older or weaker models make the §1 audit *more* important (races, blocking `async def`).
+- **Privacy mode / no Background Agents:** use a second Agent chat tab for §5.3 instead.
+- **Shortcuts:** Agent chat for multi-file + terminal; inline edit on a selection for tiny diffs; Tab for repetitive shape-following. `@`-mention files rather than pasting them.
 
 ### 5.1 Getting the conventions and scaffold into a container you don't own
 
 This depends on recruiter question 5 (§0):
-- **Allowed to clone a personal repo (`gh` is preinstalled):** keep the whole `interview-kit/` folder in it. `gh repo clone`, copy `scaffold/.` into the project (§4), then `make install && make check` gets you green in about 2 minutes. The rules file comes with it.
-- **Not allowed:** create the rules file first (Cursor Agent: "create `.cursor/rules/interview-conventions.mdc` with …", then type or dictate a short version of its points, listed below). Then have Agent generate §4 one layer at a time with the scaffold prompt below. Review every file against the pitfall table. The layering and quality checklist should be memorized going in, not looked up live.
+- **Allowed to clone a personal repo (`gh` is preinstalled):** `into-project.sh ~/app` (§4), Open Folder on `~/app`, `/interview`. `make install && make check` from `backend/` is green in about 2 minutes. Skill + rules come with it.
+- **Not allowed:** you have no kit on disk. Create `AGENTS.md` + `.cursor/rules/interview-conventions.mdc` first (paste a short version of the points below), then have Agent generate §4 one layer at a time with the scaffold prompt below. Review every file against the pitfall table. The layering and quality checklist should be memorized going in, not looked up live.
 
 Cursor reads **Project Rules**: `.mdc` files under `.cursor/rules/`, auto-attached to chat/agent/Tab context. The kit's is `scaffold/.cursor/rules/interview-conventions.mdc` (always applied): the layering, validation and ingestion rules, the two graded AI bugs to audit for (read-modify-write races, blocking calls in `async def`), and the timed-build habits (timeouts, uv only, small commits, deploy early, keep `/version` working, infra changes only in IaC). Know its points well enough to retype a short version if you can't bring files.
 

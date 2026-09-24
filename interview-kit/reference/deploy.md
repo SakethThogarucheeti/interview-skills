@@ -23,6 +23,7 @@ The container has `gh` + `doctl` but most likely **no Docker**, so don't build i
 doctl auth init                            # paste the provided API token
 export DIGITALOCEAN_TOKEN=<same token>     # Terraform reads this
 export API_KEYS="$(make -s -C backend api-key NAME=me),$(make -s -C backend api-key NAME=interviewer)"
+# ./preflight.sh does the key generation (into ~/.api_keys.env) and the terraform start below for you
                                            # §4.25: prod refuses to start without it; append :600 for a higher tier
 (cd infra && terraform init && terraform apply -var registry_name=<globally-unique-name> -auto-approve) \
   > /tmp/tf.log 2>&1 &                     # A/B: managed DBs take ~5-10 min, so start now and build meanwhile
@@ -61,7 +62,7 @@ cd ../backend && make deploy HOST=<ip> > /tmp/deploy.log 2>&1; tail -5 /tmp/depl
 ```
 **Already applied A/B's Terraform?** Run `terraform workspace new droplet` first and add `-var name=interview-droplet` (project names must be unique). The same state with `create_managed_databases=false` would *destroy* the managed databases. Wait about a minute after creation for cloud-init to install Docker (`ssh root@<ip> docker version`). Without Terraform: in the console, create a Droplet from the Marketplace "Docker on Ubuntu" image with your key. `make deploy` rsyncs the backend, builds on the box with `GIT_SHA` stamped in, runs `docker compose -f docker-compose.yml up -d --build --wait` (the override is excluded, so Postgres/Redis stay unpublished), curls `/ready`, and runs `make deployed` (tested: ~1.5 min from a fresh `s-1vcpu-2gb`). It ships the working tree, so commit first or the live SHA is `<sha>-dirty`. Scale the worker with `ssh root@<ip> 'cd /root/app && docker compose -f docker-compose.yml up -d --scale worker=3'`.
 
-Either way: when it's slow, `tail` the log, or check `doctl apps logs <app-id> api --type build` (or `--type run`) / `ssh root@<ip> 'cd /root/app && docker compose logs --tail 50 app'`. Don't re-run blind. Verify `/ready` plus one real golden-path request from outside before defense prep: a deployed-but-broken app is worse than none. Frontend too? Add a `static_sites:` component (`source_dir: frontend`, `build_command: npm run build`, `output_dir: dist`) on App Platform, or serve `frontend/dist` from nginx on the Droplet.
+Either way: when it's slow, `tail` the log, or check `doctl apps logs <app-id> api --type build` (or `--type run`) / `ssh root@<ip> 'cd /root/app && docker compose logs --tail 50 app'`. Don't re-run blind. Verify with `make e2e URL=…` (or at least `/ready` plus one real golden-path request) from outside before defense prep: a deployed-but-broken app is worse than none. Frontend too? Add a `static_sites:` component (`source_dir: frontend`, `build_command: npm run build`, `output_dir: dist`) on App Platform, or serve `frontend/dist` from nginx on the Droplet.
 
 ### 4.21 CI/CD (path B, optional with path A) — `.github/workflows/ci.yml`
 

@@ -7,7 +7,18 @@ description: Kit for DigitalOcean's timed build-and-deploy interview (3h: build 
 
 ## Bootstrap — do this first if `scaffold/` and `reference/` aren't beside this file
 
-This file may have been pasted in on its own. The rest of the kit (the verified code in `scaffold/`, the on-demand docs in `reference/`) lives in the repo, so pull it before anything else (~10 s):
+This file may have been pasted in on its own. The rest of the kit (the verified code in `scaffold/`, the on-demand docs in `reference/`) lives in the repo, so pull it before anything else (~10 s).
+
+**Cursor on a new laptop / new login:** user skills, rules, MCP and settings will be empty. Clone the repo and **File > Open Folder** on an app dir that contains this skill — do not rely on `~/.cursor` or the prep-repo chat after you start coding:
+
+```bash
+gh auth status >/dev/null 2>&1 || gh auth login
+gh repo clone SakethThogarucheeti/interview-skills ~/prep -- --depth 1 -q
+~/prep/interview-kit/into-project.sh ~/app    # scaffold + .cursor/skills + AGENTS.md + /interview
+# then in Cursor: File > Open Folder → ~/app   first message: /interview
+```
+
+**Claude Code** (same clone; skills live under `~/.claude`):
 ```bash
 K=~/.claude/skills/interview-kit
 if [ ! -d "$K/scaffold" ] || [ ! -d "$K/reference" ]; then
@@ -18,7 +29,7 @@ if [ ! -d "$K/scaffold" ] || [ ! -d "$K/reference" ]; then
 fi
 ls "$K" "$K/reference"    # expect SKILL.md reference/ scaffold/
 ```
-From here on, `scaffold/` and `reference/` mean `$K/scaffold` and `$K/reference`.
+From here on, `scaffold/` and `reference/` mean the copies beside this file (`~/app/.cursor/skills/interview-kit/` on Cursor, or `$K` on Claude Code).
 
 This file holds what's needed from minute one (brief, tactics, requirements gate, pitfall audit, LLD, checklist). Deeper material is in `reference/` and the code in `scaffold/`, both beside this file; read them when the step arrives (index before §6). Flow: requirements → design → LLD → scaffold → deploy → verbal defense. Claude Code is permitted live, so this kit can drive the actual build in the container (§5).
 
@@ -211,23 +222,30 @@ These sit next to this file (e.g. `~/.claude/skills/interview-kit/reference/`). 
 | §4, 4.1–4.18, 4.20, 4.25 | `reference/scaffold.md` | scaffolding: copy command, file map (what each `scaffold/` file owns), container preflight + setup (4.17), adapt-to-prompt pass (4.18), ingestion add-on design (4.20) |
 | §4.19, 4.21, 4.23, 4.24 | `reference/deploy.md` | first deploy: paths A (App Platform from GitHub) / B (CI image) / C (Droplet), CI/CD, Terraform + app spec, which commit is live, rollback |
 | §4.22 | `reference/do-offerings.md` | a walkthrough question about DigitalOcean products (managed DBs, Spaces, DOKS, LBs, monitoring) |
-| §5 | `reference/live-build.md` | before the session: Claude Code in the container, Cursor rules file, Cursor features, tool-use etiquette |
+| §5 | `reference/live-build.md` | before the session: new Cursor login (Open Folder + `/interview`), Claude Code in the container, tool-use etiquette |
 
-The code itself is in `scaffold/` (copy with `cp -R <skill-dir>/scaffold/. .`, §4).
+The code itself is in `scaffold/` (Cursor: `into-project.sh ~/app`, §4; or `cp -R <skill-dir>/scaffold/. .`).
 
 ## 6. Orchestration checklist
 
-1. **Preflight the container (~5 min)** — §4.17's tool check; install `uv` (+ Terraform); `doctl auth init`; `gh auth login`; start `terraform apply` in the background (§4.19). Get Claude Code + this kit, or the rules file, in place (§5).
+1. **Preflight the container (~5 min)** — copy the scaffold in (§4), then `./preflight.sh`: checks tools, installs `uv` + Terraform, generates `API_KEYS` into `~/.api_keys.env`, starts `terraform apply` in the background once `doctl` is authed, and prints only what needs you (`doctl auth init`, `gh auth login`, the one-time GitHub link in the DO console). Do those, re-run it, move on. Get Claude Code + this kit, or the rules file, in place (§5).
 2. **Pick the prompt, if given a list** — §1: favor a prepped pattern (ingestion first) or the smallest clear scope.
 3. **Read the prompt** — restate entities/actions in 1-2 sentences, name the time budget (§0) out loud.
 4. **Ask once, then stop asking** — §1's batch of clarifying questions, in one shot, covering **functional** requirements (plus the ingestion questions if it's that shape) and **non-functional** ones. Ask scale and consistency with a default lean; assume and state the rest in one line. Wait for the answer (or an explicit "use your judgment") before doing anything below, then don't reopen it.
 5. **Design (~10 min)** — §1: sketch the simplest architecture, state goals/non-goals, run the pitfall scan. The moment this is locked in, spawn the background subagent that writes `design-decisions.md` — don't wait for it, move to scaffolding.
-6. **Scaffold + first deploy (~10-15 min)** — §4: copy `scaffold/.` in (+ `strip-ingest.sh` / `rm -rf frontend` as needed), `git init` + commit (§4.17), `make install && make check` green, `make up`, `make run`, `curl /ready`. Then deploy the untouched scaffold (§4.19): path A `gh repo create … --push` + `make app-create` once Terraform finishes, or path B/C. Finish with `make deployed URL=…`. Commit.
+6. **Scaffold + first deploy (~10-15 min)** — §4: on Cursor, `into-project.sh ~/app` if not already there (copies skill + rules + `/interview`); else `cp -R scaffold/. .` (+ `strip-ingest.sh` / `rm -rf frontend` as needed). `git init` + commit (§4.17), `make install && make check` green, `make up`, `make run`, `curl /ready`. Then deploy the untouched scaffold (§4.19): path A `gh repo create … --push` + `make app-create` once Terraform finishes, or path B/C. Finish with `make deployed URL=…`. Commit.
 7. **Core feature (~70 min)** — §4.18 adapt pass (+ §4.20 for ingestion) + §2 judgment. For every endpoint, add a test in the same commit. Before accepting any AI-generated chunk, check it against §1's pitfall table, especially the write-race, double-processing and blocking-call rows — that check is what's graded. `make check` then commit after each adapted file; redeploy at each working milestone (`git push` on paths A/B, `make deploy` on C).
 8. **Automation + ops touches (~15-20 min)** — `.github/workflows/ci.yml` is already in (§4.21): on path A its test job runs on every push; on path B set the secret + variable; add the pre-commit hook; confirm `/metrics`, JSON logs with request IDs, `/ready` degrading when Redis is stopped. Put any new tunable in `config.py`.
 9. **Frontend (only if §1 said so, ~30 min)** — golden path > loading/error > (no) polish, per §0's zero-CSS rule.
-10. **Final deploy + verify (~10 min, required)** — push (or `make deploy` on C), `make deployed` shows UP TO DATE, then from outside: `/ready`, one real golden-path request, `/metrics`. Commit once verified live.
+10. **Final deploy + verify (~10 min, required)** — push (or `make deploy` on C), `make deployed` shows UP TO DATE, then `make e2e URL=…`: ~30 live checks (auth, CRUD + error envelopes, ingest → worker → exact totals under 20 concurrent writers, 429s) in about a minute. Rename its `/items` payloads when you rename the entity. Commit once verified live.
 11. **Defense prep (~15-20 min, can overlap with deploy waits)** — refresh `design-decisions.md` against what actually got built, including the rubric walkthrough (§1). Then read through it: that's the user's prep, since the user answers the walkthrough, not the agent.
 12. **Final pass** — have a one-sentence close ready: what's built, how it's verified (tests, CI, live URL), what's out of scope and why, first three next steps.
+
+**Game-day time and token budget** (measured on a full live rehearsal):
+- **Waits are DigitalOcean's, so overlap them.** Managed DBs ~6 min (start in minute 1 via `./preflight.sh`), first App Platform build ~5 min, each push ~3 min, CI deploy ~2.5 min. Never block on one in the foreground: log to a file, keep building, check the log.
+- **One path.** Path A only; don't rehearse B/C or rollback live — describe them.
+- **Tokens scale with context × turns, not command output.** Every turn re-reads the whole conversation (the rehearsal: 54M cached-read tokens vs 27k of tool output). Start the interview in a fresh session, `/compact` between phases (build → deploy → defense prep), and ask for batched steps ("write X, `make check`, commit, push") instead of many small checks.
+- **Read by file map, not by sweep.** Name the files from §4's table in the request; don't let the agent read the whole scaffold.
+- **Human-only steps come first**, all in minutes 0–5 (`doctl auth init`, `gh auth login`, the DO↔GitHub link), so nothing later waits on you.
 
 **Boundaries**: don't let architecture discussion eat build time — lock it in and adjust as you build. Don't introduce infrastructure beyond Postgres+Redis unless asked live. If behind schedule, cut features before cutting validation, error handling, tests, observability or the deployment step. Those are the rubric: a smaller, well-structured, tested, actually-deployed API outscores a larger messy or undeployed one.
