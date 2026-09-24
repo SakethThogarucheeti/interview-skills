@@ -1,39 +1,18 @@
 <!-- interview-kit reference file; § numbers match the index in ../SKILL.md -->
 
-## 5. The live build: Claude Code, Cursor or Copilot in the container
+## 5. The live build: Claude Code or Cursor in the container
 
-The IDE (VS Code or Cursor) runs on their laptop, bridged to an Ubuntu 24 container where the code and terminal live. **Claude Code is permitted**, and it's the strongest option, because this kit then drives the build directly:
-```bash
-curl -fsSL https://claude.ai/install.sh | bash      # or: npm install -g @anthropic-ai/claude-code
-gh auth login && gh repo clone <you>/<prep-repo> ~/prep && mkdir -p ~/.claude/skills && cp -R ~/prep/interview-kit ~/.claude/skills/
-claude                                              # log in with your own account, then ask it to use interview-kit
-```
-If that's blocked (no personal login allowed, or no network to claude.ai), use Cursor as below. Either way, keep Tab/Copilot completions for small edits.
+The IDE runs on their laptop, bridged to an Ubuntu 24 container where the code and terminal live. Setup is identical for both tools: `into-project.sh ~/app` (SKILL.md, Setup) builds a project whose `AGENTS.md` carries the rules and points at the playbook in `.kit/`. Nothing from your own machine or accounts is there, and nothing needs to be.
 
-**Cursor on a new laptop + new login (the actual interview machine).**
-Nothing from your home Cursor account is there: no user skills, user rules, MCP, model defaults, or Background Agents. **Only the folder you Open** is the kit. Recruiter question 5 (§0) is what makes this possible — you must be allowed to clone this repo.
+- **Claude Code** (permitted, and the strongest option because the kit drives the build): `curl -fsSL https://claude.ai/install.sh | bash`, then `cd ~/app && claude`, log in with your own account and paste the prompt. `CLAUDE.md` imports `AGENTS.md`.
+- **Cursor** (a new Enterprise login is expected: no user rules, skills, MCP or settings): **File > Open Folder → `~/app`**, not `~/prep` or the home directory. In the Agent chat, send `/interview` plus the prompt. Don't log into a personal account unless they say so, and don't spend time on Settings or MCP.
+- **Built-in/Enterprise models:** use the one they give you and stop switching. Weaker models make the §1 audit (races, blocking `async def`) *more* important. No Background Agents (privacy mode)? Use a second Agent chat for §5.3.
 
-```bash
-gh auth status >/dev/null 2>&1 || gh auth login          # your GitHub, device code
-gh repo clone SakethThogarucheeti/interview-skills ~/prep -- --depth 1 -q
-~/prep/interview-kit/into-project.sh ~/app
-```
-Then **File > Open Folder → `~/app`** (not `~/prep`, not the home directory). First Agent message: `/interview` and paste the prompt. That folder already has `AGENTS.md`, `.cursor/skills/interview-kit/` (full playbook + `reference/`), `.cursor/rules/interview-conventions.mdc`, and `.cursor/commands/interview.md`.
+Either way, keep Tab/Copilot completions for small edits.
 
-Do **not** log into your personal Cursor account unless they say you may — Enterprise login is expected. Do **not** spend time on Settings. Do **not** install MCP.
+### 5.1 If you can't bring the kit
 
-**If using Cursor's built-in / Enterprise models:**
-- Use whatever Agent model they give you and stop switching. Older or weaker models make the §1 audit *more* important (races, blocking `async def`).
-- **Privacy mode / no Background Agents:** use a second Agent chat tab for §5.3 instead.
-- **Shortcuts:** Agent chat for multi-file + terminal; inline edit on a selection for tiny diffs; Tab for repetitive shape-following. `@`-mention files rather than pasting them.
-
-### 5.1 Getting the conventions and scaffold into a container you don't own
-
-This depends on recruiter question 5 (§0):
-- **Allowed to clone a personal repo (`gh` is preinstalled):** `into-project.sh ~/app` (§4), Open Folder on `~/app`, `/interview`. `make install && make check` from `backend/` is green in about 2 minutes. Skill + rules come with it.
-- **Not allowed:** you have no kit on disk. Create `AGENTS.md` + `.cursor/rules/interview-conventions.mdc` first (paste a short version of the points below), then have Agent generate §4 one layer at a time with the scaffold prompt below. Review every file against the pitfall table. The layering and quality checklist should be memorized going in, not looked up live.
-
-Cursor reads **Project Rules**: `.mdc` files under `.cursor/rules/`, auto-attached to chat/agent/Tab context. The kit's is `scaffold/.cursor/rules/interview-conventions.mdc` (always applied): the layering, validation and ingestion rules, the two graded AI bugs to audit for (read-modify-write races, blocking calls in `async def`), and the timed-build habits (timeouts, uv only, small commits, deploy early, keep `/version` working, infra changes only in IaC). Know its points well enough to retype a short version if you can't bring files.
+This depends on recruiter question 5 (§0). If you can't clone a personal repo, create `AGENTS.md` first from memory: the layers, the two audits (atomic writes, no blocking calls in `async def`), `make check` then commit, deploy early. Know `scaffold/AGENTS.md` well enough to retype a short version. Then have the Agent generate §4 one layer at a time with the prompt below, reviewing every file against the pitfall table.
 
 **Scaffold prompt for Agent (Cmd+I)**, used only when you can't bring §4's files. Send one message per step, and review and run `make check` between steps:
 1. "Create backend/ with requirements.txt (fastapi, uvicorn[standard], pydantic, python-multipart, psycopg[binary], psycopg-pool, redis, prometheus-client), requirements-dev.txt (pytest, httpx, ruff), a Makefile with install/up/run/test/test-int/lint/fmt/check/deploy/app-deploy/deployed targets using `uv run` (GIT_SHA from git passed as a Docker build arg), pytest.ini, ruff.toml, a non-root Dockerfile with a /health HEALTHCHECK, and docker-compose.yml (postgres, redis with healthchecks, app) plus a docker-compose.override.yml that publishes postgres/redis on 127.0.0.1 only."

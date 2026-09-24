@@ -2,19 +2,8 @@
 
 ## 4. Scaffold — `scaffold/`, copy it in, then adapt
 
-The code lives in **`scaffold/`**, beside `SKILL.md` (e.g. `~/.claude/skills/interview-kit/scaffold/`, or `interview-kit/scaffold/` in the repo). Copy the whole tree into the empty project root, dotfiles included, and adapt per §4.18.
-
-**Cursor (new login):** one script so the app folder has the skill, `AGENTS.md`, rules, and `/interview` — then **Open Folder** on that dir, not the prep clone:
+The code lives in **`scaffold/`**. `into-project.sh ~/app` copies it into the project root (dotfiles included) along with the playbook in `.kit/`, so normally there's nothing to copy. Manual fallback, from an empty project dir: `cp -R <kit>/scaffold/. .` (the trailing `/.` brings `.github/ .do/ .cursor/ .gitignore`). Then, depending on the prompt:
 ```bash
-<skill-dir>/into-project.sh ~/app
-# then: File > Open Folder → ~/app
-./strip-ingest.sh                    # ONLY if the prompt is not ingestion/processing (removes §4.20)
-rm -rf frontend                      # unless §1 said a UI is required (§4.16)
-```
-
-**Claude Code / already inside an empty dir:**
-```bash
-cp -R <skill-dir>/scaffold/. .       # the trailing /. copies .github/ .do/ .cursor/ .gitignore too
 ./strip-ingest.sh                    # ONLY if the prompt is not ingestion/processing (removes §4.20)
 rm -rf frontend                      # unless §1 said a UI is required (§4.16)
 ```
@@ -24,13 +13,13 @@ Read a file when you're about to change it or explain it, not up front: the map 
 - **Automation:** Makefile, lint/format, CI that auto-deploys every push to `main` to DigitalOcean pinned to its commit (§4.21), infrastructure as code (Terraform + App Platform spec, §4.23).
 - **Operational excellence:** JSON logs with request IDs, Prometheus `/metrics`, `/health` vs `/ready`, graceful shutdown, Redis failures degrade to a cache miss, non-root container, deploy mode that keeps the DB off the internet, and every build stamped with its git SHA (`/version`, response header, logs, metric) so "which commit is live?" takes 5 seconds (§4.24).
 
-**Verified end-to-end**: lint clean; 13 base tests + 4 add-on tests pass with no infrastructure, both with and without `strip-ingest.sh` (whose output was diffed against the verified base). The integration test runs 8 concurrent workers against real Postgres and processes 40 contended batches exactly once; removing `SKIP LOCKED` makes it fail 3/3 runs. The prod-mode compose stack came up healthy, and every endpoint was exercised with curl. A Redis outage returns `degraded` and keeps serving; a Postgres outage returns a clean 503 and recovers on restart. The worker stops cleanly on SIGTERM. Version stamping was checked on a prod-mode stack built from a real commit: `/version`, `x-app-version`, `app_build_info` and the image's OCI label all equal the SHA, and `make deployed` reports up to date, then lists the exact undeployed commit after a new one. API + worker starting together on a fresh database used to crash on concurrent `CREATE TABLE` (10/10 runs); the schema advisory lock fixed it (0/10). `infra/main.tf` passes `terraform validate`, `.do/app.yaml` passes DigitalOcean's OpenAPI schema (except documented fields the schema omits), and the workflow passes `actionlint`. **Not executed here (no DO account):** `terraform apply`, `make app-deploy`, and the CI deploy jobs. Run your first deploy early.
+**Verified end-to-end**: lint clean; 13 base tests + 4 add-on tests pass with no infrastructure, both with and without `strip-ingest.sh` (whose output was diffed against the verified base). The integration test runs 8 concurrent workers against real Postgres and processes 40 contended batches exactly once; removing `SKIP LOCKED` makes it fail 3/3 runs. The prod-mode compose stack came up healthy, and every endpoint was exercised with curl. A Redis outage returns `degraded` and keeps serving; a Postgres outage returns a clean 503 and recovers on restart. The worker stops cleanly on SIGTERM. Version stamping was checked on a prod-mode stack built from a real commit: `/version`, `x-app-version`, `app_build_info` and the image's OCI label all equal the SHA, and `make deployed` reports up to date, then lists the exact undeployed commit after a new one. API + worker starting together on a fresh database used to crash on concurrent `CREATE TABLE` (10/10 runs); the schema advisory lock fixed it (0/10). `infra/main.tf` passes `terraform validate`, `.do/app.yaml` passes DigitalOcean's OpenAPI schema (except documented fields the schema omits), and the workflow passes `actionlint`. **Live on DigitalOcean (2026-09-24):** all three deploy paths (A: App Platform from GitHub, B: CI image with SHA check and `make app-rollback`, C: Droplet) deployed and passed `make e2e`, including auth and the rate limit shared across 2 instances; `terraform apply`/`destroy` ran clean on a fresh account (one transient 412, retried).
 
 **File map** (paths relative to `scaffold/`; the § numbers are what the rest of this kit cites):
 
 | § | File(s) | What it owns / the decision to defend |
 |---|---|---|
-| — | `.gitignore`, `.cursor/rules/interview-conventions.mdc` | Ignores (venv, node_modules, .env, tfstate); Cursor Project Rule, always applied (§5.1) |
+| — | `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `.cursor/commands/interview.md` | Ignores (venv, node_modules, .env, tfstate). `AGENTS.md` is the one always-on rule set (Cursor reads it natively; `CLAUDE.md` imports it for Claude Code); `/interview` in Cursor just points at it |
 | 4.1 | `backend/requirements.txt`, `requirements-dev.txt` | Minimum-version runtime deps in the image; test/lint tools only in dev |
 | 4.2 | `backend/Dockerfile`, `.dockerignore` | Slim, non-root, `/health` HEALTHCHECK; `GIT_SHA`/`BUILD_TIME` build args → env + OCI `revision` label |
 | 4.3 | `backend/docker-compose.yml`, `docker-compose.override.yml` | Postgres + Redis with healthchecks, app, worker. The override (auto-merged locally) publishes DB/Redis on 127.0.0.1; `make deploy` uses `-f docker-compose.yml` only, so on a Droplet just the app port is reachable |

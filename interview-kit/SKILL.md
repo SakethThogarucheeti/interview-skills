@@ -5,31 +5,15 @@ description: Kit for DigitalOcean's timed build-and-deploy interview (3h: build 
 
 # Interview kit — timed full-stack build
 
-## Bootstrap — do this first if `scaffold/` and `reference/` aren't beside this file
+## Setup — only if `reference/` isn't beside this file
 
-This file may have been pasted in on its own. The rest of the kit (the verified code in `scaffold/`, the on-demand docs in `reference/`) lives in the repo, so pull it before anything else (~10 s).
-
-**Cursor on a new laptop / new login:** user skills, rules, MCP and settings will be empty. Clone the repo and **File > Open Folder** on an app dir that contains this skill — do not rely on `~/.cursor` or the prep-repo chat after you start coding:
-
+This file may have been pasted in alone. Everything else lives in the repo, and one command turns it into a ready project for Cursor or Claude Code (~30 s):
 ```bash
-gh auth status >/dev/null 2>&1 || gh auth login
+gh auth status >/dev/null 2>&1 || gh auth login      # private repo: device code, finish in the browser
 gh repo clone SakethThogarucheeti/interview-skills ~/prep -- --depth 1 -q
-~/prep/interview-kit/into-project.sh ~/app    # scaffold + .cursor/skills + AGENTS.md + /interview
-# then in Cursor: File > Open Folder → ~/app   first message: /interview
+~/prep/interview-kit/into-project.sh ~/app            # scaffold + this playbook in ~/app/.kit + git init + ./preflight.sh
 ```
-
-**Claude Code** (same clone; skills live under `~/.claude`):
-```bash
-K=~/.claude/skills/interview-kit
-if [ ! -d "$K/scaffold" ] || [ ! -d "$K/reference" ]; then
-  gh auth status >/dev/null 2>&1 || gh auth login     # private repo: device code, finish in the browser
-  rm -rf /tmp/interview-skills
-  gh repo clone SakethThogarucheeti/interview-skills /tmp/interview-skills -- --depth 1 -q
-  mkdir -p "$K" && cp -R /tmp/interview-skills/interview-kit/. "$K"/
-fi
-ls "$K" "$K/reference"    # expect SKILL.md reference/ scaffold/
-```
-From here on, `scaffold/` and `reference/` mean the copies beside this file (`~/app/.cursor/skills/interview-kit/` on Cursor, or `$K` on Claude Code).
+Then work in `~/app` (Cursor: File > Open Folder; Claude Code: `cd ~/app && claude`). Its `AGENTS.md` is the always-on rule set and points back here (`.kit/SKILL.md`). In that project, `reference/` means `.kit/reference/`, and the scaffold is already in the project root, so skip §4's copy step.
 
 This file holds what's needed from minute one (brief, tactics, requirements gate, pitfall audit, LLD, checklist). Deeper material is in `reference/` and the code in `scaffold/`, both beside this file; read them when the step arrives (index before §6). Flow: requirements → design → LLD → scaffold → deploy → verbal defense. Claude Code is permitted live, so this kit can drive the actual build in the container (§5).
 
@@ -214,7 +198,7 @@ Cross-cutting concerns each get one module: `config.py` (env), `errors.py` (erro
 
 ## 3–5. Reference files — read the one you need, when you need it
 
-These sit next to this file (e.g. `~/.claude/skills/interview-kit/reference/`). § references elsewhere in the kit resolve here:
+These sit next to this file (`.kit/reference/` in a project built by `into-project.sh`). § references elsewhere in the kit resolve here:
 
 | § | File | Read it when |
 |---|---|---|
@@ -222,18 +206,18 @@ These sit next to this file (e.g. `~/.claude/skills/interview-kit/reference/`). 
 | §4, 4.1–4.18, 4.20, 4.25 | `reference/scaffold.md` | scaffolding: copy command, file map (what each `scaffold/` file owns), container preflight + setup (4.17), adapt-to-prompt pass (4.18), ingestion add-on design (4.20) |
 | §4.19, 4.21, 4.23, 4.24 | `reference/deploy.md` | first deploy: paths A (App Platform from GitHub) / B (CI image) / C (Droplet), CI/CD, Terraform + app spec, which commit is live, rollback |
 | §4.22 | `reference/do-offerings.md` | a walkthrough question about DigitalOcean products (managed DBs, Spaces, DOKS, LBs, monitoring) |
-| §5 | `reference/live-build.md` | before the session: new Cursor login (Open Folder + `/interview`), Claude Code in the container, tool-use etiquette |
+| §5 | `reference/live-build.md` | before the session: Claude Code vs Cursor in the container, working without the kit, tool-use etiquette |
 
-The code itself is in `scaffold/` (Cursor: `into-project.sh ~/app`, §4; or `cp -R <skill-dir>/scaffold/. .`).
+The code itself is in `scaffold/`; `into-project.sh` puts it in the project root (Setup, top of this file).
 
 ## 6. Orchestration checklist
 
-1. **Preflight the container (~5 min)** — copy the scaffold in (§4), then `./preflight.sh`: checks tools, installs `uv` + Terraform, generates `API_KEYS` into `~/.api_keys.env`, starts `terraform apply` in the background once `doctl` is authed, and prints only what needs you (`doctl auth init`, `gh auth login`, the one-time GitHub link in the DO console). Do those, re-run it, move on. Get Claude Code + this kit, or the rules file, in place (§5).
+1. **Set up + preflight (~5 min)** — `into-project.sh ~/app` (Setup, top) builds the project and runs `./preflight.sh`, which checks tools, installs `uv` + Terraform, generates `API_KEYS` into `~/.api_keys.env`, starts `terraform apply` in the background once `doctl` is authed, and prints only what needs you (`doctl auth init`, `gh auth login`, the one-time GitHub link in the DO console). Do those, re-run `./preflight.sh`, open `~/app` in Cursor or run `claude` there (§5), move on.
 2. **Pick the prompt, if given a list** — §1: favor a prepped pattern (ingestion first) or the smallest clear scope.
 3. **Read the prompt** — restate entities/actions in 1-2 sentences, name the time budget (§0) out loud.
 4. **Ask once, then stop asking** — §1's batch of clarifying questions, in one shot, covering **functional** requirements (plus the ingestion questions if it's that shape) and **non-functional** ones. Ask scale and consistency with a default lean; assume and state the rest in one line. Wait for the answer (or an explicit "use your judgment") before doing anything below, then don't reopen it.
 5. **Design (~10 min)** — §1: sketch the simplest architecture, state goals/non-goals, run the pitfall scan. The moment this is locked in, spawn the background subagent that writes `design-decisions.md` — don't wait for it, move to scaffolding.
-6. **Scaffold + first deploy (~10-15 min)** — §4: on Cursor, `into-project.sh ~/app` if not already there (copies skill + rules + `/interview`); else `cp -R scaffold/. .` (+ `strip-ingest.sh` / `rm -rf frontend` as needed). `git init` + commit (§4.17), `make install && make check` green, `make up`, `make run`, `curl /ready`. Then deploy the untouched scaffold (§4.19): path A `gh repo create … --push` + `make app-create` once Terraform finishes, or path B/C. Finish with `make deployed URL=…`. Commit.
+6. **Scaffold + first deploy (~10-15 min)** — §4: the scaffold is already in `~/app` (run `./strip-ingest.sh` / `rm -rf frontend` if the prompt says so, then commit). `make install && make check` green, `make up`, `make run`, `curl /ready`. Then deploy the untouched scaffold (§4.19): path A `gh repo create … --push` + `make app-create` once Terraform finishes, or path B/C. Finish with `make deployed URL=…`. Commit.
 7. **Core feature (~70 min)** — §4.18 adapt pass (+ §4.20 for ingestion) + §2 judgment. For every endpoint, add a test in the same commit. Before accepting any AI-generated chunk, check it against §1's pitfall table, especially the write-race, double-processing and blocking-call rows — that check is what's graded. `make check` then commit after each adapted file; redeploy at each working milestone (`git push` on paths A/B, `make deploy` on C).
 8. **Automation + ops touches (~15-20 min)** — `.github/workflows/ci.yml` is already in (§4.21): on path A its test job runs on every push; on path B set the secret + variable; add the pre-commit hook; confirm `/metrics`, JSON logs with request IDs, `/ready` degrading when Redis is stopped. Put any new tunable in `config.py`.
 9. **Frontend (only if §1 said so, ~30 min)** — golden path > loading/error > (no) polish, per §0's zero-CSS rule.

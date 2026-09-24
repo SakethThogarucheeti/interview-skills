@@ -1,18 +1,31 @@
 #!/usr/bin/env bash
-# Interview laptop, new Cursor login: copy scaffold + skill into an empty app dir
-# so Cursor finds AGENTS.md, .cursor/rules, .cursor/skills, .cursor/commands with
-# no user-level sync. Usage: ./into-project.sh ~/app
+# The one setup command, for Cursor and Claude Code alike:
+#   gh repo clone SakethThogarucheeti/interview-skills ~/prep -- --depth 1 -q
+#   ~/prep/interview-kit/into-project.sh ~/app
+# Builds the project: scaffold in the root, this playbook in .kit/ (AGENTS.md points
+# there; Cursor reads AGENTS.md, Claude Code reads it via CLAUDE.md), git init + first
+# commit, then ./preflight.sh. Then open ~/app in Cursor, or `cd ~/app && claude`.
 set -euo pipefail
 K=$(cd "$(dirname "$0")" && pwd)
-DEST=${1:-}
-if [ -z "$DEST" ]; then
-  echo "usage: $0 <empty-project-dir>" >&2
+DEST=${1:?usage: into-project.sh <new-project-dir>}
+if [ -n "$(ls -A "$DEST" 2>/dev/null)" ]; then
+  echo "$DEST is not empty; pick a new directory (nothing was copied)" >&2
   exit 1
 fi
-mkdir -p "$DEST"
+mkdir -p "$DEST/.kit"
 cp -R "$K/scaffold/." "$DEST/"
-mkdir -p "$DEST/.cursor/skills/interview-kit"
-cp "$K/SKILL.md" "$DEST/.cursor/skills/interview-kit/"
-cp -R "$K/reference" "$DEST/.cursor/skills/interview-kit/"
-echo "Open this folder in Cursor (File > Open Folder), then send /interview and paste the prompt:"
-echo "  $DEST"
+cp -R "$K/SKILL.md" "$K/reference" "$DEST/.kit/"
+cd "$DEST"
+git init -q -b main
+if git config user.email >/dev/null; then
+  git add -A && git commit -q -m "Scaffold from interview-kit" && echo "created $DEST (git: first commit on main)"
+else
+  echo "created $DEST -- set a git identity, then commit:"
+  echo "  git config --global user.name '<you>' && git config --global user.email '<you@example.com>'"
+  echo "  git add -A && git commit -m 'Scaffold from interview-kit'"
+fi
+echo
+./preflight.sh
+echo
+echo "open it: Cursor -> File > Open Folder -> $DEST, then /interview + the prompt"
+echo "         Claude Code -> cd $DEST && claude, then paste the prompt"
