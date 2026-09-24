@@ -16,6 +16,7 @@ request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
 REQUESTS = Counter("http_requests_total", "HTTP requests", ["method", "route", "status"])
 LATENCY = Histogram("http_request_duration_seconds", "HTTP request latency", ["method", "route"])
 INGESTED = Counter("ingest_records_total", "Ingested records by outcome", ["outcome"])
+SECURITY_REJECTIONS = Counter("security_rejections_total", "Requests refused by auth/rate limit", ["reason"])
 BUILD_INFO = Gauge("app_build_info", "Running build; value is always 1", ["git_sha"])
 
 _STD_ATTRS = set(logging.makeLogRecord({}).__dict__) | {"message", "asctime"}

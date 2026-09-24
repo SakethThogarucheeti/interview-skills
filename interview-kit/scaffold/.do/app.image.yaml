@@ -22,6 +22,10 @@ envs:
   - key: REDIS_URL
     value: ${cache.DATABASE_URL}
     scope: RUN_TIME
+  - key: API_KEYS  # name:key[:limit],... filled from your shell/CI secret; DO stores it encrypted
+    value: ${API_KEYS}
+    type: SECRET
+    scope: RUN_TIME
 services:
   - name: api
     image:

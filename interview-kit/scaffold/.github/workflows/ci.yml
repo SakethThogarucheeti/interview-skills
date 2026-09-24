@@ -22,6 +22,10 @@ jobs:
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 2s --health-retries 15
+      redis:  # the rate limiter's concurrency test
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 2s --health-retries 15
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -32,7 +36,7 @@ jobs:
       - run: make image
 
   # App Platform target. Enable with repo variable DOCR_REGISTRY (the registry
-  # name from infra/) and secret DIGITALOCEAN_ACCESS_TOKEN.
+  # name from infra/) and secrets DIGITALOCEAN_ACCESS_TOKEN + API_KEYS.
   deploy-app-platform:
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.DOCR_REGISTRY != ''
@@ -46,6 +50,10 @@ jobs:
     env:
       IMAGE: registry.digitalocean.com/${{ vars.DOCR_REGISTRY }}/app:${{ github.sha }}
     steps:
+      - name: Require the API_KEYS secret (prod refuses to start without it)
+        env:
+          API_KEYS: ${{ secrets.API_KEYS }}
+        run: test -n "$API_KEYS" || { echo "::error::gh secret set API_KEYS (make api-key NAME=you)"; exit 1; }
       - uses: actions/checkout@v4
       - uses: digitalocean/action-doctl@v2
         with:
@@ -62,6 +70,7 @@ jobs:
         uses: digitalocean/app_action/deploy@v2
         env:
           IMAGE_TAG: ${{ github.sha }}  # substituted into ${IMAGE_TAG} in the spec
+          API_KEYS: ${{ secrets.API_KEYS }}  # and ${API_KEYS}; DO stores it as an encrypted SECRET
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
           app_spec_location: .do/app.image.yaml

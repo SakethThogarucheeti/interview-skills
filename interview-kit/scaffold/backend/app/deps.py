@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.ingest_repository import IngestRepository, PostgresIngestRepository
 from app.ingest_service import IngestService
 from app.repository import InMemoryItemRepository, ItemRepository, PostgresItemRepository
+from app.security import InMemoryRateLimiter, RateLimiter, RedisRateLimiter
 from app.service import ItemService
 
 
@@ -50,6 +51,13 @@ def get_service() -> ItemService:
     # No Redis in test mode (tests need no live services) or when REDIS_URL="".
     cache = None if _test_mode() or not get_settings().redis_url else get_cache()
     return ItemService(get_repository(), cache, get_settings().cache_ttl)
+
+
+def get_rate_limiter() -> RateLimiter:
+    # Redis-backed so N instances share one budget; in-memory for tests and Redis-less dev.
+    if _test_mode() or not get_settings().redis_url:
+        return InMemoryRateLimiter()
+    return RedisRateLimiter(get_redis_client())
 
 
 def close_resources() -> None:

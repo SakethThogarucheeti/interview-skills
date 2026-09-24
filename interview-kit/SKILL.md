@@ -81,7 +81,7 @@ Batch every open question; skip only what doesn't change scope, stating that ass
 **Functional — always ask, these change what you build:**
 - **Core entities & actions** — create/read/update/delete what?
 - **The one golden-path user story** — what must demonstrably work end-to-end at the demo?
-- **Non-goals** — what you're explicitly not building (auth, multi-tenancy, admin UI…).
+- **Non-goals** — what you're explicitly not building (user accounts/OAuth — API keys are in, multi-tenancy, admin UI…).
 - **What "deployed" means** — backend API only, or the frontend too? Changes the §4.19 deploy plan.
 - **For an ingestion prompt, add these (each changes the §4.20 design):**
   - What does a record look like, and where do records come from (JSON batch, CSV/file upload, stream)?
@@ -104,7 +104,7 @@ Also name the prompt's specific spiky-traffic risk, if any — it targets the pi
 | **Latency** | p95 < 200ms reads, < 500ms writes — justifies cache-aside, not more. |
 | **Availability** | App Platform: 2 API instances with rolling, health-gated deploys; single-node managed DBs (standby node = the HA upgrade). Droplet: one box, a SPOF named in §3, not hidden. |
 | **Durability** | Postgres is source of truth; Redis is disposable — losing it costs latency, never data. |
-| **Security** | Server-side validation/generated IDs; DB/Redis never exposed publicly (§4.3); DB password from env, not code; no authn/authz unless asked (an API-key header is the 10-min answer if pushed). `CORS_ORIGINS=*` is a named demo default (§4.13). |
+| **Security** | Server-side validation/generated IDs; DB/Redis never exposed publicly (§4.3); DB password from env, not code; API-key auth + a per-client Redis rate limit ship in the scaffold (§4.25): every data route needs a key, prod refuses to start without `API_KEYS`, 429 + `Retry-After` over the limit. User accounts/OAuth only if asked. `CORS_ORIGINS=*` is a named demo default (§4.13). |
 | **Read/write mix** | Read-heavy, write-bursty — the shape of most prompts. Drives the caching story. |
 | **Delivery semantics** (ingestion) | At-least-once intake + idempotent dedupe by record ID = effectively-once results (§4.20). |
 | **Observability** | JSON logs with request IDs, Prometheus `/metrics` (rate, errors, latency, ingest outcomes), `/health` liveness vs `/ready` readiness. No tracing/dashboards stack in 3 hours — name OpenTelemetry + Grafana as the next step. |
@@ -133,7 +133,7 @@ Check the simple design against this list. Tag each **build it** (cheap, clearly
 | Risk | Default call |
 |---|---|
 | **Single point of failure** — one app/DB/cache process | **Mention it.** Stateless app scales horizontally behind a load balancer as a config change; managed Postgres/Redis with failover is the prod answer. Don't build HA in this window. |
-| **Spiky/bursty traffic** on a specific endpoint the prompt implies (viral link, vote surge) | **Build it** if there's a genuinely hot endpoint: rate limiting (Decorator, ~10-15 min) + confirm that read path uses the cache-aside. Otherwise **mention it**. |
+| **Spiky/bursty traffic** on a specific endpoint the prompt implies (viral link, vote surge) | **Already built**: per-client rate limit on every data route (§4.25); for a genuinely hot endpoint, give it its own tighter limit + confirm that read path uses the cache-aside. Otherwise **mention it**. |
 | **Write races** — duplicate unique values, double-vote/booking, read-modify-write counters, partial updates | **Build it** wherever the prompt has one: a DB unique constraint + conflict handling, or one atomic `UPDATE ... SET n = n + 1 ... RETURNING` instead of read-then-write. A correctness bug, not just a scaling nicety. **Worked example in the scaffold**: `repository.update_fields` (§4.9) does a partial update in a single statement precisely because the read → `model_copy` → `save` version loses one of two concurrent PATCHes *every single time* — copy that shape for any new mutating endpoint, and `test_concurrency.py`'s shape for its test. |
 | **Double processing** — two workers/requests claim the same job; aggregates updated read-modify-write | **Build it** for any processing prompt: claim with `FOR UPDATE SKIP LOCKED`, aggregate with an atomic upsert (`total = total + EXCLUDED.total`), claim + work + complete in one transaction (§4.20). |
 | **Processing in the request path** — heavy work inside the POST, unbounded batch/file size | **Build it** for ingestion: validate + store + enqueue, return `202` + status URL, cap batch size (413) and backlog (503 + `Retry-After`) (§4.20). |
@@ -154,7 +154,7 @@ If the prompt is small with none of the above genuinely in play, say so, keep it
 - **Data ingestion + processing API** (the recruiter's own wording, so the most likely shape): batch/file intake → validate → persist → process/aggregate → query results. Start from §4.20 and rename `EventIn` and the aggregate. The graded traps are double processing by concurrent workers and read-modify-write aggregates, both pre-empted there.
 - **Cloud Resource Quota / Usage Limit Manager** — cap usage against a preset quota. The natural AI-generated bug is the write-race trap above: `check quota, then create` races under concurrency. Fix: one atomic statement — `UPDATE ... SET used = used + 1 WHERE used < limit RETURNING used`, not two steps.
 - **High-frequency telemetry / cache with origin-outage resilience** — must keep serving through an origin/DB outage instead of cascading the failure. Intake is §4.20. For the serving side, extend `app/cache.py`'s `get_or_set` so that on loader failure it falls back to the last-known-good cached value (even past TTL), and add a small circuit breaker (stop calling after N failures, retry after a cooldown).
-- **Rate limiter with tier-based quotas** — sliding-window algorithm, free/pro tiers with different limits, sub-50ms responses, per-client concurrency safety. Store window state in Redis (`INCR` + `EXPIRE`, or a sorted set for a true sliding window), not in-process — the app is meant to scale horizontally and in-memory counters don't survive that. The graded trap here is the same check-then-act race as the quota manager: use `INCR`'s atomicity (or a Lua script for multi-step logic) instead of `GET` then compare-and-`SET`. Per-client key = tier lookup + fixed window/bucket math, no locks needed since Redis ops are already atomic.
+- **Rate limiter with tier-based quotas** — sliding-window algorithm, free/pro tiers with different limits, sub-50ms responses, per-client concurrency safety. Store window state in Redis (`INCR` + `EXPIRE`, or a sorted set for a true sliding window), not in-process — the app is meant to scale horizontally and in-memory counters don't survive that. The graded trap here is the same check-then-act race as the quota manager: use `INCR`'s atomicity (or a Lua script for multi-step logic) instead of `GET` then compare-and-`SET`. Start from `app/security.py` (§4.25): it already has tiers (`name:key:limit`), a sliding-window counter in one atomic Lua script, 429 + `Retry-After`, and a 200-thread race test. Adapt the tier source (a table instead of env) and add per-endpoint limits if asked.
 
 If told which prompt you drew, jump to the matching notes; otherwise the general scaffold and pitfall scan (§1/§2/§4) cover any prompt in this format.
 
@@ -208,7 +208,7 @@ These sit next to this file (e.g. `~/.claude/skills/interview-kit/reference/`). 
 | § | File | Read it when |
 |---|---|---|
 | §3 | `reference/talking-points.md` | defense prep / writing `design-decisions.md`: scaling, spikes, downtime, deploy/monitor, consistency, config/secrets answers |
-| §4, 4.1–4.18, 4.20 | `reference/scaffold.md` | scaffolding: copy command, file map (what each `scaffold/` file owns), container preflight + setup (4.17), adapt-to-prompt pass (4.18), ingestion add-on design (4.20) |
+| §4, 4.1–4.18, 4.20, 4.25 | `reference/scaffold.md` | scaffolding: copy command, file map (what each `scaffold/` file owns), container preflight + setup (4.17), adapt-to-prompt pass (4.18), ingestion add-on design (4.20) |
 | §4.19, 4.21, 4.23, 4.24 | `reference/deploy.md` | first deploy: paths A (App Platform from GitHub) / B (CI image) / C (Droplet), CI/CD, Terraform + app spec, which commit is live, rollback |
 | §4.22 | `reference/do-offerings.md` | a walkthrough question about DigitalOcean products (managed DBs, Spaces, DOKS, LBs, monitoring) |
 | §5 | `reference/live-build.md` | before the session: Claude Code in the container, Cursor rules file, Cursor features, tool-use etiquette |

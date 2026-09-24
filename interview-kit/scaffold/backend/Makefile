@@ -1,6 +1,7 @@
 # One entry point for humans and CI alike -- the CI workflow calls these targets.
-.PHONY: install up up-native run test test-int lint fmt check image deploy deployed app-create app-status app-deploy app-rollback
+.PHONY: install up up-native run test test-int lint fmt check image deploy deployed api-key app-create app-status app-deploy app-rollback
 DB ?= postgresql://postgres:postgres@localhost:5432/app
+REDIS ?= redis://localhost:6379/15
 # Every image is stamped with the commit it was built from (served at /version).
 # "-dirty" marks a build with uncommitted changes -- it matches no commit.
 GIT_SHA ?= $(shell if git rev-parse -q --verify HEAD >/dev/null 2>&1; then \
@@ -17,6 +18,10 @@ URL ?= $(APP_URL)
 # macOS has no `timeout`; use coreutils' gtimeout if present, else run unbounded.
 TIMEOUT := $(shell command -v timeout || command -v gtimeout)
 to = $(if $(TIMEOUT),$(TIMEOUT) $(1))
+# Fill a spec's placeholders. API_KEYS is read from the environment by the shell ($$),
+# so the secret never shows up in make's echoed command or in a log.
+fill = sed -e 's|$${GITHUB_REPO}|$(REPO)|g' -e 's|$${IMAGE_TAG}|$(1)|g' -e "s|\$${API_KEYS}|$$API_KEYS|g" $(2)
+need-keys = @test -n "$$API_KEYS" || { echo 'export API_KEYS=name:key,... first (make api-key NAME=you)'; exit 1; }
 
 install:
 	$(call to,60) uv venv -q --allow-existing .venv
@@ -35,7 +40,7 @@ run:
 test:
 	APP_ENV=test uv run pytest -q -m "not integration"
 test-int:
-	APP_ENV=test TEST_DATABASE_URL=$(DB) uv run pytest -q -m integration
+	APP_ENV=test TEST_DATABASE_URL=$(DB) TEST_REDIS_URL=$(REDIS) uv run pytest -q -m integration
 lint:
 	uv run ruff check . && uv run ruff format --check .
 fmt:
@@ -50,31 +55,48 @@ deploy:  # make deploy HOST=<droplet-ip>
 	$(call to,10) curl -fsS http://$(HOST)/ready
 	@$(MAKE) --no-print-directory deployed URL=http://$(HOST)
 deployed:  # is live == local HEAD? URL defaults to this App Platform app; pass URL=http://<droplet-ip> otherwise
-	@live=$$(curl -fsS $(URL)/version | python3 -c 'import sys,json; print(json.load(sys.stdin)["git_sha"])'); \
+	@test -n "$(URL)" || { echo "no URL: pass URL=... (or create the app first)"; exit 1; }
+	@# A new app's hostname can be negatively cached locally for 30 min if looked up before its DNS
+	@# record existed, so resolve it via public DNS-over-HTTPS and pin the IP with curl --resolve.
+	@h=$$(echo "$(URL)" | sed -E 's#^https?://##; s#[/:].*##'); \
+	for i in $$(seq 1 24); do \
+		ip=$$(curl -fsS -m 5 "https://dns.google/resolve?name=$$h&type=A" 2>/dev/null | python3 -c \
+			'import sys,json; a=[x["data"] for x in json.load(sys.stdin).get("Answer",[]) if x["type"]==1]; print(a[0] if a else "")' 2>/dev/null); \
+		pin=$${ip:+--resolve $$h:443:$$ip --resolve $$h:80:$$ip}; \
+		live=$$(curl -fsS -m 10 $$pin $(URL)/version 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin)["git_sha"])' 2>/dev/null) \
+		&& [ -n "$$live" ] && break; sleep 5; done; \
+	if [ -z "$$live" ]; then echo "live:  UNREACHABLE at $(URL)/version after 2 min (new app: DNS can lag; check the console)"; exit 1; fi; \
 	echo "live:  $$live"; echo "local: $(GIT_SHA)"; \
-	if [ "$$live" = "$(GIT_SHA)" ]; then echo "UP TO DATE"; else echo "DIFFERENT -- changes since live:"; \
+	if [ "$$live" = "$(GIT_SHA)" ]; then echo "UP TO DATE"; \
+	elif [ "$$live-dirty" = "$(GIT_SHA)" ]; then echo "LIVE = HEAD, plus uncommitted local changes"; \
+	else echo "DIFFERENT -- changes since live:"; \
 	git log --oneline $$live..HEAD 2>/dev/null || echo "(live sha not in local history)"; fi
+api-key:  # make api-key NAME=alice -> one name:key entry for API_KEYS (comma-join several)
+	@python3 -c 'import secrets, sys; print(sys.argv[1] + ":" + secrets.token_urlsafe(24))' $(or $(NAME),client)
 # make app-create -- App Platform builds from your GitHub repo (REPO defaults to the
 # gh remote) and redeploys on every push to main. Re-run after editing .do/app.yaml.
 app-create:
 	@test -n "$(REPO)" || { echo "no GitHub repo: gh repo create <name> --private --source=.. --push"; exit 1; }
-	sed 's|$${GITHUB_REPO}|$(REPO)|g' ../.do/app.yaml | $(call to,1200) doctl apps create --spec - --upsert --wait
+	$(need-keys)
+	$(call fill,,../.do/app.yaml) | $(call to,1200) doctl apps create --spec - --upsert --wait
 	@$(MAKE) --no-print-directory deployed
 # Recent deployments: Cause names the commit for GitHub-built deploys.
 app-status:
 	doctl apps list-deployments $(APP_ID) --format ID,Cause,Phase,Created --no-header | head -5
 # make app-deploy REGISTRY=<docr-name> -- the CI App Platform job, run where Docker works.
 # --platform: App Platform runs amd64; a Mac builds arm64 by default and the app
-# would crash-loop. sed replaces only IMAGE_TAG; the db./cache. bindable
+# would crash-loop. fill replaces IMAGE_TAG and API_KEYS; the db./cache. bindable
 # variables in the spec are App Platform's to resolve at deploy time.
 app-deploy:
 	doctl registry login --expiry-seconds 1200
 	docker build -q --platform linux/amd64 --build-arg GIT_SHA --build-arg BUILD_TIME -t $(APP_IMAGE) .
 	docker push -q $(APP_IMAGE)
-	sed 's/$${IMAGE_TAG}/$(GIT_SHA)/g' ../.do/app.image.yaml | $(call to,900) doctl apps create --spec - --upsert --wait
+	$(need-keys)
+	$(call fill,$(GIT_SHA),../.do/app.image.yaml) | $(call to,900) doctl apps create --spec - --upsert --wait
 	@$(MAKE) --no-print-directory deployed
 # make app-rollback REGISTRY=<name> SHA=<old full sha> -- re-point the app at an
 # image that's already in the registry (every deploy pushed one). No rebuild, so
 # the rollback runs exactly the bits that ran before.
 app-rollback:
-	sed 's/$${IMAGE_TAG}/$(SHA)/g' ../.do/app.image.yaml | $(call to,900) doctl apps create --spec - --upsert --wait
+	$(need-keys)
+	$(call fill,$(SHA),../.do/app.image.yaml) | $(call to,900) doctl apps create --spec - --upsert --wait

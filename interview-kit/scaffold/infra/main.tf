@@ -27,8 +27,9 @@ variable "region" {
 }
 
 variable "registry_name" {
-  description = "Container registry name -- globally unique across DigitalOcean."
+  description = "Container registry name, globally unique across DigitalOcean. Only path B (CI-built images) needs one; empty = no registry (one per account)."
   type        = string
+  default     = ""
 }
 
 variable "create_managed_databases" {
@@ -52,6 +53,7 @@ variable "ssh_public_key" {
 # One registry per account. basic = 5 repos / 5 GiB (starter's 500 MiB fills
 # after ~3 pushes of this image).
 resource "digitalocean_container_registry" "this" {
+  count                  = var.registry_name == "" ? 0 : 1
   name                   = var.registry_name
   subscription_tier_slug = "basic"
   region                 = var.region
@@ -144,7 +146,7 @@ resource "digitalocean_project" "this" {
 }
 
 output "registry" {
-  value = digitalocean_container_registry.this.name
+  value = one(digitalocean_container_registry.this[*].name)
 }
 
 output "pg_cluster_name" {

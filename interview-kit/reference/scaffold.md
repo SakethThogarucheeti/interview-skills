@@ -24,7 +24,7 @@ Read a file when you're about to change it or explain it, not up front: the map 
 | 4.1 | `backend/requirements.txt`, `requirements-dev.txt` | Minimum-version runtime deps in the image; test/lint tools only in dev |
 | 4.2 | `backend/Dockerfile`, `.dockerignore` | Slim, non-root, `/health` HEALTHCHECK; `GIT_SHA`/`BUILD_TIME` build args → env + OCI `revision` label |
 | 4.3 | `backend/docker-compose.yml`, `docker-compose.override.yml` | Postgres + Redis with healthchecks, app, worker. The override (auto-merged locally) publishes DB/Redis on 127.0.0.1; `make deploy` uses `-f docker-compose.yml` only, so on a Droplet just the app port is reachable |
-| 4.4 | `backend/Makefile`, `pytest.ini`, `ruff.toml` | The one command surface: `install up up-native run test test-int lint fmt check image deploy deployed app-create app-status app-deploy app-rollback`. Install, rsync/ssh and `doctl` steps have timeouts (skipped if neither `timeout` nor `gtimeout` exists). Recipe lines need real tabs if you ever retype it |
+| 4.4 | `backend/Makefile`, `pytest.ini`, `ruff.toml` | The one command surface: `install up up-native run test test-int lint fmt check image deploy deployed api-key app-create app-status app-deploy app-rollback`. Install, rsync/ssh and `doctl` steps have timeouts (skipped if neither `timeout` nor `gtimeout` exists). Recipe lines need real tabs if you ever retype it |
 | 4.5 | `app/config.py` | Frozen `Settings` from env, parsed once at startup (a bad value fails fast); `REDIS_URL=""` disables the cache; `GIT_SHA`/`BUILD_TIME` |
 | 4.6 | `app/observability.py` | JSON log lines with `request_id` + `version`; request-ID middleware (`x-request-id`); Prometheus counter/histogram labeled by route *template*; `app_build_info{git_sha}`; `x-app-version` header |
 | 4.7 | `app/errors.py` | `AppError` → NotFound/Conflict/PayloadTooLarge/Unavailable; one envelope `{error:{code,message,request_id,details}}` for domain, validation, HTTP, DB-down (503) and unhandled (500, no leak) errors |
@@ -38,8 +38,9 @@ Read a file when you're about to change it or explain it, not up front: the map 
 | 4.15 | `app/events.py` (optional, not wired) | Redis pub/sub publisher/subscriber (Observer). Wire it in only if the prompt needs live/multi-consumer updates |
 | 4.16 | `frontend/` (optional) | Vite + React: `src/api.js` (the only fetch client, error envelope → message), `src/App.jsx` (list/create/delete, loading + error states, inline styles). Delete it for an API-only brief; `/docs` (Swagger) is the demo UI |
 | 4.20 | `app/ingest_*.py`, `app/worker.py`, `tests/test_ingest.py` | Ingestion add-on (below); removed by `strip-ingest.sh` |
-| 4.21 | `.github/workflows/ci.yml` | Lint → tests → Postgres integration → image → auto-deploy on main, verified by SHA |
+| 4.21 | `.github/workflows/ci.yml` | Lint → tests → Postgres + Redis integration → image → auto-deploy on main (needs the `API_KEYS` secret), verified by SHA |
 | 4.23 | `infra/main.tf`, `.do/app.yaml`, `.do/app.image.yaml` | Terraform (registry, managed PG + Valkey, optional Droplet + firewall) and the App Platform spec in two flavors: build from GitHub (path A) and prebuilt image (path B) |
+| 4.25 | `app/security.py`, `tests/test_security.py` | One middleware before every non-ops route: API key (`X-API-Key` or `Bearer`) from `API_KEYS=name:key[:limit],…` (hashes only in memory), then a per-client sliding-window rate limit in Redis (atomic Lua; in-memory for tests). 401/429 use the error envelope; 429 has `Retry-After`, successes carry `X-RateLimit-*`. Ops paths (`/health /ready /version /metrics /docs`) stay open for health checks and the SHA check. Empty `API_KEYS` = auth off in dev/test, **refuses to start in prod**. Redis down = fail open. `/docs` gets an Authorize button. `make api-key NAME=x` mints a key |
 
 ### 4.17 Setup commands
 

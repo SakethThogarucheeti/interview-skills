@@ -22,9 +22,15 @@ The container has `gh` + `doctl` but most likely **no Docker**, so don't build i
 ```bash
 doctl auth init                            # paste the provided API token
 export DIGITALOCEAN_TOKEN=<same token>     # Terraform reads this
+export API_KEYS="$(make -s -C backend api-key NAME=me),$(make -s -C backend api-key NAME=interviewer)"
+                                           # §4.25: prod refuses to start without it; append :600 for a higher tier
 (cd infra && terraform init && terraform apply -var registry_name=<globally-unique-name> -auto-approve) \
   > /tmp/tf.log 2>&1 &                     # A/B: managed DBs take ~5-10 min, so start now and build meanwhile
+# registry_name is only needed for path B (drop it for A-only; DO allows one registry per account)
 ```
+Keep `API_KEYS` in that shell only (not in a committed file). Every data route now needs `-H "X-API-Key: <key>"`; `/health`, `/ready`, `/version`, `/metrics` and `/docs` stay open, so health checks, CI's SHA check and `make deployed` need no key. Give the interviewer their key and point them at `/docs` → **Authorize**.
+Watch the clusters with `doctl databases list --format Name,Engine,Status` (`creating` → `online`; tested: Valkey ~4.5 min, Postgres ~6 min), or block until ready: `until doctl databases list --format Name,Status --no-header | grep -q 'interview-pg *online'; do sleep 15; done`. On a brand-new account the first apply can fail one cluster with `412 user is not a member of the project`. Just re-run the same `terraform apply`: it creates only what's missing, and the retry succeeded.
+
 No Terraform, or short on time/credits? Replace the two `databases:` entries in the spec with a dev database (`- name: db` / `engine: PG` / `production: false`, ready in about a minute, no Terraform) and set `REDIS_URL` to `""`: the app runs without a cache and `/ready` reports only the database. Not doing ingestion? `strip-ingest.sh` already removed the `workers:` blocks.
 
 **A. App Platform builds from GitHub:**
@@ -32,23 +38,28 @@ No Terraform, or short on time/credits? Replace the two `databases:` entries in 
 gh auth login                                           # device code, finish in Chrome
 gh repo create interview-app --private --source=. --push  # from the project root, after the first commit on main
 ```
-Once, in the DO console: **Apps → Create App → GitHub**, authorize DigitalOcean and give it access to this repo, then leave the wizard. `doctl` can't create a GitHub-sourced app until the account link exists. Then:
+Once, in the DO console: **Apps → Create App → GitHub**, authorize DigitalOcean and give it access to this repo, then leave the wizard. "No components detected" there is expected (the Dockerfile is in `backend/`; the spec's `source_dir` handles it) and means DO can read the repo. `doctl` can't create a GitHub-sourced app until the account link exists. Then:
 ```bash
 cd backend && make app-create > /tmp/app.log 2>&1; tail -5 /tmp/app.log   # first build + deploy ~5-8 min; ends with make deployed
+# reads $API_KEYS from the shell into the spec as an encrypted SECRET (never echoed); re-run to rotate keys
+# REPO comes from `gh repo view`; if gh isn't logged in, pass REPO=<owner>/<repo>
 ```
+**DNS gotcha (hit in testing):** `*.ondigitalocean.app` has a 30-minute negative-cache TTL. If anything looks up a new app's hostname before its record exists (seconds after creation), your resolver caches "doesn't exist" for up to 30 min, even though the app is live. `make deployed` works around it by resolving via DNS-over-HTTPS and pinning the IP. For manual checks: `ip=$(curl -s "https://dns.google/resolve?name=<host>&type=A" | jq -r '.Answer[0].data'); curl --resolve <host>:443:$ip https://<host>/ready`. The browser (which uses its own DNS) usually works fine.
+
 From then on, **every `git push` to main builds and deploys that commit**. `make app-status` shows the build/deploy phase, with the commit as the cause, and `make deployed` shows live vs local. The spec itself isn't re-read on push, so re-run `make app-create` after editing `.do/app.yaml`. Add the pre-commit hook (§4.17) so a red `make check` never gets pushed.
 
-**B. GitHub Actions builds the image:** see §4.21. Set-up is `gh repo create …`, `gh secret set DIGITALOCEAN_ACCESS_TOKEN`, `gh variable set DOCR_REGISTRY --body <registry_name>`, then push. If Docker does work locally, `make app-deploy REGISTRY=<name>` runs the same steps by hand.
+**B. GitHub Actions builds the image:** see §4.21. Set-up is `gh repo create …`, `gh secret set DIGITALOCEAN_ACCESS_TOKEN`, `gh secret set API_KEYS --body "$API_KEYS"`, `gh variable set DOCR_REGISTRY --body <registry_name>`, then push. If Docker does work locally, `make app-deploy REGISTRY=<name>` runs the same steps by hand.
 
 **C. Droplet** (builds on the box, so no local Docker and no GitHub):
 ```bash
 ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519
-cd infra && terraform init && terraform apply -var registry_name=<name> -var create_droplet=true -var create_managed_databases=false \
+cd infra && terraform init && terraform apply -var create_droplet=true -var create_managed_databases=false \
   -var "ssh_public_key=$(cat ~/.ssh/id_ed25519.pub)" -auto-approve && terraform output droplet_ip
-ssh root@<ip> 'mkdir -p /root/app && echo POSTGRES_PASSWORD=$(openssl rand -hex 16) > /root/app/.env'   # once, before first deploy
+ssh -o StrictHostKeyChecking=accept-new root@<ip> 'mkdir -p /root/app && echo POSTGRES_PASSWORD=$(openssl rand -hex 16) > /root/app/.env'   # once, before first deploy
+ssh root@<ip> "echo API_KEYS=$API_KEYS >> /root/app/.env"   # once; compose passes it to the app
 cd ../backend && make deploy HOST=<ip> > /tmp/deploy.log 2>&1; tail -5 /tmp/deploy.log
 ```
-**Already applied A/B's Terraform?** Run `terraform workspace new droplet` first. The same state with `create_managed_databases=false` would *destroy* the managed databases. Wait about a minute after creation for cloud-init to install Docker (`ssh root@<ip> docker version`). Without Terraform: in the console, create a Droplet from the Marketplace "Docker on Ubuntu" image with your key. `make deploy` rsyncs the backend, builds on the box with `GIT_SHA` stamped in, runs `docker compose -f docker-compose.yml up -d --build --wait` (the override is excluded, so Postgres/Redis stay unpublished), curls `/ready`, and runs `make deployed`. Scale the worker with `ssh root@<ip> 'cd /root/app && docker compose -f docker-compose.yml up -d --scale worker=3'`.
+**Already applied A/B's Terraform?** Run `terraform workspace new droplet` first and add `-var name=interview-droplet` (project names must be unique). The same state with `create_managed_databases=false` would *destroy* the managed databases. Wait about a minute after creation for cloud-init to install Docker (`ssh root@<ip> docker version`). Without Terraform: in the console, create a Droplet from the Marketplace "Docker on Ubuntu" image with your key. `make deploy` rsyncs the backend, builds on the box with `GIT_SHA` stamped in, runs `docker compose -f docker-compose.yml up -d --build --wait` (the override is excluded, so Postgres/Redis stay unpublished), curls `/ready`, and runs `make deployed` (tested: ~1.5 min from a fresh `s-1vcpu-2gb`). It ships the working tree, so commit first or the live SHA is `<sha>-dirty`. Scale the worker with `ssh root@<ip> 'cd /root/app && docker compose -f docker-compose.yml up -d --scale worker=3'`.
 
 Either way: when it's slow, `tail` the log, or check `doctl apps logs <app-id> api --type build` (or `--type run`) / `ssh root@<ip> 'cd /root/app && docker compose logs --tail 50 app'`. Don't re-run blind. Verify `/ready` plus one real golden-path request from outside before defense prep: a deployed-but-broken app is worse than none. Frontend too? Add a `static_sites:` component (`source_dir: frontend`, `build_command: npm run build`, `output_dir: dist`) on App Platform, or serve `frontend/dist` from nginx on the Droplet.
 
@@ -64,8 +75,10 @@ push to main, tests green ──> deploy-app-platform:                         �
 - **Every commit on main is deployed automatically.** Deploys queue (`concurrency`, never cancelled mid-flight), so the last one to finish is always the newest commit.
 - **What gets deployed is the commit, not "latest".** The image tag *is* the SHA, and the spec that references it is applied in the same step. The final step proves the live app reports that SHA, so a deploy that silently kept the old version fails the pipeline.
 - **The IaC is applied on every push too.** `.do/app.image.yaml` goes through app_action on each deploy, so changing `instance_count`, an alert, an env var or a health check is a reviewed commit, applied by CI like code. Drift gets overwritten on the next deploy.
-- **Setup (~2 min with `gh`, once):** `gh secret set DIGITALOCEAN_ACCESS_TOKEN` (read/write App Platform + registry), `gh variable set DOCR_REGISTRY --body "$(cd infra && terraform output -raw registry)"`. For the Droplet job instead: `gh variable set DROPLET_HOST --body <ip>` + `gh secret set DROPLET_SSH_KEY < ~/.ssh/id_ed25519`. Unset variables skip a deploy job rather than fail it, so the workflow is safe to commit first.
+- **Setup (~2 min with `gh`, once):** `gh secret set DIGITALOCEAN_ACCESS_TOKEN` (read/write App Platform + registry), `gh secret set API_KEYS --body "$API_KEYS"` (the deploy job fails fast without it), `gh variable set DOCR_REGISTRY --body "$(cd infra && terraform output -raw registry)"`. For the Droplet job instead: `gh variable set DROPLET_HOST --body <ip>` + `gh secret set DROPLET_SSH_KEY < ~/.ssh/id_ed25519`. Unset variables skip a deploy job rather than fail it, so the workflow is safe to commit first.
 - **With path A (§4.19), leave the variables unset.** The `test` job still runs lint + unit + Postgres integration tests on every push, and App Platform does the deploying. That's free CI evidence with no secrets. Don't set `DOCR_REGISTRY` as well, or two systems will fight over the app's source.
+- **Switching an existing path-A app to B (tested):** the first push after setting the secret + variable starts both a GitHub build and the CI deploy. The CI spec update wins (the GitHub build shows SUPERSEDED in `make app-status`), and from then on the app is image-sourced (no `deploy_on_push`). Deploy job ~2.5 min.
+- **Rollback needs an older image in DOCR.** Path A builds never land in your registry, so after switching there's nothing to roll back to until CI has deployed twice.
 - Validated with `actionlint`; not executed on GitHub. Jobs: `test` (Postgres service container), `deploy-app-platform` (runs when `vars.DOCR_REGISTRY` is set), `deploy-droplet` (when `vars.DROPLET_HOST` is set); both deploy jobs use `environment: production` and one `deploy-production` concurrency group.
 
 **Infra changes through CI too (next step, not needed in 3 hours):** Terraform state has to be shared first. DO Spaces is S3-compatible, so put this in `infra/main.tf`'s `terraform {}` block (validated with `terraform validate`):
@@ -92,7 +105,7 @@ This is a two-layer split, and the split is the design point to say out loud:
 
 Terraform *can* manage the app too (`digitalocean_app`), but then every CI image-tag change becomes Terraform drift. This split gives each layer one owner.
 
-- **`infra/main.tf`** variables: `registry_name` (required, globally unique), `name` (`interview`), `region` (`nyc3`), `create_managed_databases` (true), `create_droplet` (false), `ssh_public_key`. It creates a DOCR registry (basic tier), `interview-pg` (PG 16) and `interview-cache` (Valkey 8) single-node clusters, an optional Droplet (Docker via cloud-init) + Cloud Firewall (22/80 in), and a Project grouping them.
+- **`infra/main.tf`** variables: `registry_name` (optional, globally unique; set = create a DOCR registry for path B), `name` (`interview`), `region` (`nyc3`), `create_managed_databases` (true), `create_droplet` (false), `ssh_public_key`. It creates an optional DOCR registry (basic tier), `interview-pg` (PG 16) and `interview-cache` (Valkey 8) single-node clusters, an optional Droplet (Docker via cloud-init) + Cloud Firewall (22/80 in), and a Project grouping them.
 - **`.do/app.yaml`** / **`.do/app.image.yaml`**: identical except the source (`github:` repo + `deploy_on_push` + `GIT_SHA: ${_self.COMMIT_HASH}`, vs DOCR `app:${IMAGE_TAG}`). `api` service ( ×2 `apps-s-1vcpu-1gb`, readiness `/ready`, liveness `/health`, CPU and p95 alerts), `worker` (same image, `python -m app.worker`), `db`/`cache` attached to the Terraform clusters, env from bindable vars, and app-level deploy/domain-failure alerts.
 - **`cluster_name`s** in the spec must match Terraform's `${var.name}-pg` / `-cache`. Keep the default `name = "interview"`, or change both.
 - **The database** is Postgres's default `defaultdb` as `doadmin`, reached via `${db.DATABASE_URL}` (TLS, `sslmode=require` included). A dedicated DB/user is `db_name`/`db_user` in the spec: a 2-line hardening step.

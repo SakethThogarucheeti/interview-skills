@@ -8,11 +8,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.deps import close_resources, get_service
+from app.deps import close_resources, get_rate_limiter, get_service
 from app.errors import install_error_handlers
 from app.ingest_routes import ingest_router
 from app.models import Item, ItemCreate, ItemPage, ItemUpdate
 from app.observability import configure_logging, install_observability
+from app.security import install_security
 from app.service import ItemService
 
 settings = get_settings()
@@ -29,6 +30,9 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Interview App", version="0.1.0", lifespan=lifespan)
+# API key + rate limit on everything but the ops endpoints. Before observability,
+# so it runs inside it and rejections are still logged and counted.
+install_security(app, settings.api_keys, settings.rate_limit_per_min, get_rate_limiter(), settings.app_env)
 install_observability(app, settings.git_sha)
 install_error_handlers(app)
 app.include_router(ingest_router)

@@ -20,6 +20,8 @@ class Settings:
     max_pending_batches: int
     worker_poll_seconds: float
     worker_max_attempts: int
+    api_keys: str
+    rate_limit_per_min: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -39,6 +41,8 @@ class Settings:
             max_pending_batches=int(env("MAX_PENDING_BATCHES", "500")),
             worker_poll_seconds=float(env("WORKER_POLL_SECONDS", "0.5")),
             worker_max_attempts=int(env("WORKER_MAX_ATTEMPTS", "3")),
+            api_keys=env("API_KEYS", ""),  # name:key[:limit],... (app/security.py); a secret, never logged
+            rate_limit_per_min=int(env("RATE_LIMIT_PER_MIN", "120")),
         )
 
 

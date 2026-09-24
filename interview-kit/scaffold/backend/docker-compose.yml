@@ -34,6 +34,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       APP_ENV: ${APP_ENV:-prod}
+      API_KEYS: ${API_KEYS:-}  # from /root/app/.env on the Droplet; prod won't start without it
+      RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-120}
     depends_on: &app-deps
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

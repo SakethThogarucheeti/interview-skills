@@ -1,10 +1,13 @@
 // Thin API client -- one function per endpoint, one place that knows the base
 // URL and error handling. Rename Item -> your entity everywhere below.
 const BASE = "/api";
+// Demo only: a VITE_ var is bundled into the JS, so this key is public to anyone who
+// opens devtools. Real answer: user login (session/OAuth) or a backend-for-frontend.
+const KEY = import.meta.env.VITE_API_KEY;
 
 async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(KEY && { "X-API-Key": KEY }) },
     ...options,
   });
   if (!res.ok) {
