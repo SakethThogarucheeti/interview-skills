@@ -1,0 +1,66 @@
+# App Platform spec: the app's infrastructure as code, versioned with the code.
+# CI (digitalocean/app_action) applies it on every push to main, replacing
+# ${IMAGE_TAG} with the commit SHA -- every deployment is pinned to exactly one
+# commit, and the full config (scaling, health checks, alerts, env, DB
+# attachments) changes only through a reviewed commit. ${db.*}/${cache.*} are
+# App Platform bindable variables, resolved at deploy time, not by CI.
+name: interview-app
+region: nyc
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED
+envs:
+  - key: APP_ENV
+    value: prod
+    scope: RUN_TIME
+  - key: LOG_LEVEL
+    value: INFO
+    scope: RUN_TIME
+  - key: DATABASE_URL
+    value: ${db.DATABASE_URL}
+    scope: RUN_TIME
+  - key: REDIS_URL
+    value: ${cache.DATABASE_URL}
+    scope: RUN_TIME
+services:
+  - name: api
+    image:
+      registry_type: DOCR
+      repository: app
+      tag: ${IMAGE_TAG}
+    http_port: 8000
+    instance_count: 2  # >1 = zero-downtime rolling deploys, survives one instance dying
+    instance_size_slug: apps-s-1vcpu-1gb
+    health_check:  # readiness: gates traffic during rollout; a DB outage drains the instance
+      http_path: /ready
+    liveness_health_check:  # restart only if the process itself is wedged
+      http_path: /health
+    alerts:
+      - rule: CPU_UTILIZATION
+        operator: GREATER_THAN
+        value: 80
+        window: FIVE_MINUTES
+      - rule: REQUEST_DURATION_P95_MS
+        operator: GREATER_THAN
+        value: 500
+        window: FIVE_MINUTES
+workers:
+  - name: worker  # ingestion add-on (section 4.20); same image, different command
+    image:
+      registry_type: DOCR
+      repository: app
+      tag: ${IMAGE_TAG}
+    run_command: python -m app.worker
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+databases:
+  # Attaching an existing managed cluster (infra/main.tf) also adds the app as
+  # a trusted source, so the DB accepts connections only from this app.
+  - name: db
+    engine: PG
+    production: true
+    cluster_name: interview-pg
+  - name: cache
+    engine: VALKEY
+    production: true
+    cluster_name: interview-cache

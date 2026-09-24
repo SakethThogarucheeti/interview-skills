@@ -1,0 +1,51 @@
+---
+description: Conventions for the timed interview build (REST API, ingestion + processing). Always apply.
+alwaysApply: true
+---
+
+# Interview build conventions
+
+FastAPI -> Postgres, Redis for cache-aside on hot reads. Async processing via a
+worker process claiming jobs from Postgres (FOR UPDATE SKIP LOCKED). No
+microservices, separate broker, or multi-region -- talking points, not builds.
+
+Layering (do not collapse): main.py routes (thin) -> service.py (business
+logic, depends only on repository/cache Protocols, raises errors.py domain
+errors, never HTTPException) -> repository.py (only place touching Postgres)
+-> cache.py (Redis, wrapped; Redis failure = cache miss, never a 500) ->
+models.py (one Pydantic shape per concept) -> deps.py (wiring).
+Cross-cutting: config.py (all config from env, read once), errors.py (one
+JSON error envelope with request_id), observability.py (JSON logs, request
+IDs, Prometheus /metrics). /health = liveness, /ready = dependency checks.
+
+Validation: bounds on every input field, extra="forbid" on request models,
+limit/offset with a max on every list endpoint, an index for every non-PK
+lookup. Ingestion: validate per record (report rejects by index), dedupe by
+client-supplied id (ON CONFLICT DO NOTHING), return 202 + status URL, cap
+batch size (413) and backlog (503).
+
+Repository pattern on every entity. Strategy/Factory/Observer/Decorator/
+Adapter only with two genuinely interchangeable implementations.
+
+Tests (pytest, tests/): every endpoint gets an API test via dependency
+overrides with an in-memory/fake repository (no live infra); every
+counter/quota/aggregate gets a concurrency test; real-SQL behavior gets an
+integration test marked `integration`. `make check` = ruff + tests, and must
+stay green; commit after each green run.
+
+Do not accept AI-generated code at face value. Before moving on from any
+generated chunk, check for (1) check-then-act / read-modify-write races --
+must be one atomic DB statement or SKIP LOCKED claim; (2) blocking sync calls
+inside async def -- route handlers are plain def on purpose, never mix.
+Catching these two is reported to be specifically what's graded.
+
+Timed build: no large refactors, no extra dependencies, no gold-plating.
+Every command gets a timeout; anything backgrounded logs to a file checked
+with tail. Python deps: uv only (uv venv / uv pip / uv run, via make) -- never
+bare pip or `source .venv/bin/activate`. git: .gitignore before the first
+commit, then small frequent commits. Deploy to DigitalOcean early (make
+app-deploy / make deploy, or push to main for CI) and redeploy at each
+milestone -- hard requirement. Every build is stamped with GIT_SHA; keep
+/version working. Infra changes go in infra/main.tf or .do/app.yaml, never
+the console.
+Frontend only if asked: React + one api.js client, inline styles only.

@@ -1,0 +1,7 @@
+# Dev-only, auto-merged by `docker compose` unless -f is given. Never deployed.
+# Bound to 127.0.0.1: reachable from this machine (or an SSH tunnel), not the network.
+services:
+  postgres:
+    ports: ["127.0.0.1:5432:5432"]
+  redis:
+    ports: ["127.0.0.1:6379:6379"]

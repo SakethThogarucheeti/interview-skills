@@ -1,0 +1,49 @@
+# Full stack. Local dev: `docker compose up -d --wait postgres redis` (the
+# override file publishes their ports to localhost). Deploy: pass
+# `-f docker-compose.yml` explicitly so the override -- and those ports -- are
+# NOT applied; only the app is reachable from outside.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: app
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      retries: 15
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 15
+  app:
+    build: &app-build
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+        BUILD_TIME: ${BUILD_TIME:-}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    environment: &app-env
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/app
+      REDIS_URL: redis://redis:6379/0
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      APP_ENV: ${APP_ENV:-prod}
+    depends_on: &app-deps
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+  worker:  # ingestion add-on (section 4.20); scale with --scale worker=N
+    build: *app-build
+    command: ["python", "-m", "app.worker"]
+    environment: *app-env
+    depends_on: *app-deps
+    healthcheck: { disable: true }  # no HTTP port; the image's /health check doesn't apply
+    restart: unless-stopped
+volumes:
+  pgdata:

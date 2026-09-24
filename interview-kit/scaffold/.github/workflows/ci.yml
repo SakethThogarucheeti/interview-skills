@@ -1,0 +1,99 @@
+# Every push/PR: lint + unit + integration tests + image build.
+# Every push to main, after tests pass: build an image tagged with the commit
+# SHA, push it to DigitalOcean Container Registry, apply .do/app.yaml (the app's
+# infrastructure as code) pinned to that tag, then prove the live app reports
+# that exact SHA at /version. Same `make` targets you run locally.
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: make install
+      - run: make lint
+      - run: make test
+      - run: make test-int
+      - run: make image
+
+  # App Platform target. Enable with repo variable DOCR_REGISTRY (the registry
+  # name from infra/) and secret DIGITALOCEAN_ACCESS_TOKEN.
+  deploy-app-platform:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.DOCR_REGISTRY != ''
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-production  # deploys queue up in order; never two at once
+      cancel-in-progress: false
+    environment:
+      name: production  # GitHub's Deployments view then shows which commit is live
+      url: ${{ steps.deploy.outputs.app && fromJson(steps.deploy.outputs.app).live_url }}
+    env:
+      IMAGE: registry.digitalocean.com/${{ vars.DOCR_REGISTRY }}/app:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+      - run: doctl registry login --expiry-seconds 1200
+      - name: Build and push image tagged with the commit SHA
+        working-directory: backend
+        run: |
+          docker build --build-arg GIT_SHA=${{ github.sha }} \
+            --build-arg BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" -t "$IMAGE" .
+          docker push "$IMAGE"
+      - name: Apply .do/app.yaml pinned to this commit
+        id: deploy
+        uses: digitalocean/app_action/deploy@v2
+        env:
+          IMAGE_TAG: ${{ github.sha }}  # substituted into ${IMAGE_TAG} in the spec
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          print_deploy_logs: true
+      - name: Verify the live app runs this exact commit
+        env:
+          URL: ${{ fromJson(steps.deploy.outputs.app).live_url }}
+        run: |
+          for _ in $(seq 1 30); do
+            live=$(curl -fsS "$URL/version" | jq -r .git_sha || true)
+            if [ "$live" = "$GITHUB_SHA" ]; then echo "live at $URL is $GITHUB_SHA"; exit 0; fi
+            sleep 10
+          done
+          echo "live is '$live', expected $GITHUB_SHA"; exit 1
+
+  # Single-Droplet target (section 4.19). Enable with repo variable DROPLET_HOST
+  # and secret DROPLET_SSH_KEY. make deploy already verifies /version.
+  deploy-droplet:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.DROPLET_HOST != ''
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-droplet
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - name: SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DROPLET_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ vars.DROPLET_HOST }}" >> ~/.ssh/known_hosts
+      - run: make deploy HOST=${{ vars.DROPLET_HOST }}
