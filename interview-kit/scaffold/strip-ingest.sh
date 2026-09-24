@@ -15,6 +15,7 @@ def strip_deps(s):
     return s[:s.index("\n\n@lru_cache\ndef get_ingest_repository")].rstrip("\n") + "\n"
 edit("backend/app/deps.py", strip_deps)
 edit("backend/docker-compose.yml", lambda s: s[:s.index("  worker:")] + s[s.index("volumes:\n  pgdata"):])
-edit(".do/app.yaml", lambda s: s[:s.index("workers:")] + s[s.index("databases:"):])
+for spec in (".do/app.yaml", ".do/app.image.yaml"):
+    edit(spec, lambda s: s[:s.index("workers:")] + s[s.index("databases:"):])
 PY
 echo "ingestion add-on removed; run: make -C backend check"

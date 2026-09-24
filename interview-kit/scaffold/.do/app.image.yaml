@@ -1,10 +1,9 @@
-# App Platform spec, build-from-GitHub flavor (the default): App Platform clones
-# the repo, builds backend/Dockerfile and redeploys on every push to main
-# (deploy_on_push) -- no CI, registry or local Docker needed. `make app-create`
-# fills ${GITHUB_REPO} and applies it; re-run it after editing this file (a push
-# redeploys code, not spec changes). GIT_SHA comes from App Platform's
-# ${_self.COMMIT_HASH}, so /version still names the live commit.
-# .do/app.image.yaml is the prebuilt-image flavor (CI / make app-deploy).
+# App Platform spec, prebuilt-image flavor: used by CI (digitalocean/app_action,
+# app_spec_location) and `make app-deploy`, which replace ${IMAGE_TAG} with the
+# commit SHA -- every deployment is pinned to exactly one commit, and the full
+# config (scaling, health checks, alerts, env, DB attachments) changes only
+# through a reviewed commit. ${db.*}/${cache.*} are App Platform bindable
+# variables, resolved at deploy time. .do/app.yaml is the build-from-GitHub flavor.
 name: interview-app
 region: nyc
 alerts:
@@ -25,16 +24,10 @@ envs:
     scope: RUN_TIME
 services:
   - name: api
-    github:
-      repo: ${GITHUB_REPO}
-      branch: main
-      deploy_on_push: true
-    source_dir: backend
-    dockerfile_path: backend/Dockerfile
-    envs:
-      - key: GIT_SHA
-        value: ${_self.COMMIT_HASH}
-        scope: RUN_TIME
+    image:
+      registry_type: DOCR
+      repository: app
+      tag: ${IMAGE_TAG}
     http_port: 8000
     instance_count: 2  # >1 = zero-downtime rolling deploys, survives one instance dying
     instance_size_slug: apps-s-1vcpu-1gb
@@ -52,17 +45,11 @@ services:
         value: 500
         window: FIVE_MINUTES
 workers:
-  - name: worker  # ingestion add-on (section 4.20); same Dockerfile, different command
-    github:
-      repo: ${GITHUB_REPO}
-      branch: main
-      deploy_on_push: true
-    source_dir: backend
-    dockerfile_path: backend/Dockerfile
-    envs:
-      - key: GIT_SHA
-        value: ${_self.COMMIT_HASH}
-        scope: RUN_TIME
+  - name: worker  # ingestion add-on (section 4.20); same image, different command
+    image:
+      registry_type: DOCR
+      repository: app
+      tag: ${IMAGE_TAG}
     run_command: python -m app.worker
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-0.5gb

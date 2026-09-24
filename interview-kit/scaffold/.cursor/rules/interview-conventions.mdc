@@ -43,9 +43,9 @@ Timed build: no large refactors, no extra dependencies, no gold-plating.
 Every command gets a timeout; anything backgrounded logs to a file checked
 with tail. Python deps: uv only (uv venv / uv pip / uv run, via make) -- never
 bare pip or `source .venv/bin/activate`. git: .gitignore before the first
-commit, then small frequent commits. Deploy to DigitalOcean early (make
-app-deploy / make deploy, or push to main for CI) and redeploy at each
-milestone -- hard requirement. Every build is stamped with GIT_SHA; keep
+commit, then small frequent commits. Deploy to DigitalOcean early (git push
+to main = App Platform deploy; else make deploy) and redeploy at each
+milestone -- hard requirement. No Docker in the dev container: make up-native. Every build is stamped with GIT_SHA; keep
 /version working. Infra changes go in infra/main.tf or .do/app.yaml, never
 the console.
 Frontend only if asked: React + one api.js client, inline styles only.

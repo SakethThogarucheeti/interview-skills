@@ -1,6 +1,6 @@
 # Every push/PR: lint + unit + integration tests + image build.
 # Every push to main, after tests pass: build an image tagged with the commit
-# SHA, push it to DigitalOcean Container Registry, apply .do/app.yaml (the app's
+# SHA, push it to DigitalOcean Container Registry, apply .do/app.image.yaml (the app's
 # infrastructure as code) pinned to that tag, then prove the live app reports
 # that exact SHA at /version. Same `make` targets you run locally.
 name: ci
@@ -57,13 +57,14 @@ jobs:
           docker build --build-arg GIT_SHA=${{ github.sha }} \
             --build-arg BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" -t "$IMAGE" .
           docker push "$IMAGE"
-      - name: Apply .do/app.yaml pinned to this commit
+      - name: Apply .do/app.image.yaml pinned to this commit
         id: deploy
         uses: digitalocean/app_action/deploy@v2
         env:
           IMAGE_TAG: ${{ github.sha }}  # substituted into ${IMAGE_TAG} in the spec
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          app_spec_location: .do/app.image.yaml
           print_deploy_logs: true
       - name: Verify the live app runs this exact commit
         env:
