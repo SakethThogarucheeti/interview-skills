@@ -14,9 +14,10 @@ RUN set -e; a=$(dpkg --print-architecture); \
 RUN set -e; a=$(dpkg --print-architecture); \
     curl -fsSLo /tmp/tf.zip "https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_${a}.zip" \
     && unzip -oq /tmp/tf.zip -d /usr/local/bin && rm /tmp/tf.zip
-# passwordless-sudo user; uid 1000 so files written to the bind-mounted project stay yours on the host
+# passwordless-sudo user with the host's uid (dev.sh passes it) so files in the bind-mounted project stay yours
+ARG UID=1000
 RUN userdel -r ubuntu 2>/dev/null || true; \
-    useradd -m -u 1000 -s /bin/bash dev && echo 'dev ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/dev
+    useradd -m -u $UID -s /bin/bash dev && echo 'dev ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/dev
 USER dev
 ENV HOME=/home/dev PATH=/home/dev/.local/bin:$PATH
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1

@@ -19,7 +19,7 @@ export PATH="$HOME/.local/bin:$PATH"
 ARCH=$(case $(uname -m) in x86_64) echo amd64;; aarch64|arm64) echo arm64;; esac)  # no dpkg outside Debian/Ubuntu
 for t in git python3 make gh jq curl; do command -v $t >/dev/null && ok "$t" || need "$t missing" "sudo apt-get install -y $t"; done
 if ! command -v doctl >/dev/null; then  # not in Ubuntu's repos: latest GitHub release
-  v=$(curl -fsSL https://api.github.com/repos/digitalocean/doctl/releases/latest 2>/dev/null | jq -r '.tag_name // empty' | tr -d v)
+  v=$(curl -fsSL https://api.github.com/repos/digitalocean/doctl/releases/latest 2>/dev/null | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')  # no jq needed
   [ -n "$v" ] && curl -fsSL "https://github.com/digitalocean/doctl/releases/download/v$v/doctl-$v-linux-$ARCH.tar.gz" | sudo tar -xz -C /usr/local/bin doctl \
     && fix "doctl $v installed" || need "doctl install failed" "get it from https://github.com/digitalocean/doctl/releases (linux-$ARCH) into /usr/local/bin"
 else ok "doctl"; fi
