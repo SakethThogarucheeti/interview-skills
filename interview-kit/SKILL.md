@@ -14,6 +14,8 @@ git clone -q --depth 1 https://github.com/SakethThogarucheeti/interview-skills ~
 ```
 **Update: host isn't the interview's Ubuntu 24 container** (your own Arch/macOS/other laptop, where `apt`/`dpkg` are missing and preflight's installs fail). After `into-project.sh`, run everything in a dev container instead: `cd ~/app && ./dev.sh ./preflight.sh` (then `./dev.sh bash -c 'cd backend && make install check up-native'`, or `./dev.sh` for a shell). It is `ubuntu:24.04` with `doctl`, `terraform`, `gh`, `uv`, Postgres and Redis preinstalled, the host's `gh` login passed in as `GH_TOKEN`, `~/.api_keys.env` shared, doctl auth kept in a volume and the API on `:8000`. Inside the real interview container skip this; preflight installs `doctl`/`terraform` itself (arch-aware, no `dpkg`).
 
+**Where the DigitalOcean token goes:** into `DO_TOKEN`, once, on the preflight command: `DO_TOKEN=<token> ./preflight.sh` (in the dev container: `DO_TOKEN=<token> ./dev.sh ./preflight.sh`; `dev.sh` forwards it). preflight runs `doctl auth init` with it (stored in the `app-dev-doctl` volume or `~/.config/doctl`) and reuses that for Terraform, so nothing else needs it. Never write it to a file in the repo or echo it. Prefer the user typing it themselves with `! DO_TOKEN=<token> ...` (keeps it out of the chat transcript) over pasting it to the agent.
+
 (Agents: the repo README's "AI agent: set this up" section is the full procedure, including clearing preflight's list for the user.)
 Then work in `~/app` (Cursor: File > Open Folder; Claude Code: `cd ~/app && claude`). Its `AGENTS.md` is the always-on rule set and points back here (`.kit/SKILL.md`). In that project, `reference/` means `.kit/reference/`, and the scaffold is already in the project root, so skip §4's copy step.
 

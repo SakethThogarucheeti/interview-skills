@@ -24,7 +24,9 @@ the DigitalOcean token when you ask, and then paste the interview prompt.
 3. **Clear the "still needs you" list that `./preflight.sh` prints,** one item at a time, re-running
    `./preflight.sh` after each:
    - GitHub login: preflight starts it and prints a code; give the user the link and the code.
-   - DigitalOcean: ask for the provided API token, then run `DO_TOKEN='<token>' ./preflight.sh`. Never echo it.
+   - DigitalOcean: the token goes in `DO_TOKEN` on the preflight command, once: `DO_TOKEN='<token>' ./preflight.sh` (dev container:
+     `DO_TOKEN='<token>' ./dev.sh ./preflight.sh`). Offer the user both routes, preferring that they type it themselves
+     as `! DO_TOKEN=... ./dev.sh ./preflight.sh` (keeps it out of the chat) over pasting it to you. Never echo it or write it to a file.
    - Preflight then sets the git identity, creates and pushes the private GitHub repo, and starts
      Terraform (managed Postgres + Valkey, ~6 min) in the background.
    - The one step that can't be scripted: give the user the DigitalOcean console click-path it prints.

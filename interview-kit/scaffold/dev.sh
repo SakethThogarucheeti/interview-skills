@@ -4,7 +4,8 @@
 #   ./dev.sh ./preflight.sh  run any command inside it (this is how to finish setup)
 # The project is bind-mounted, so edits show up on both sides.
 # The host's `gh` token is passed in as GH_TOKEN (no second GitHub login; without host gh, log in
-# once inside), and ~/.api_keys.env is bind-mounted (same API keys). doctl auth lives in a named volume. API is on :8000.
+# once inside), and ~/.api_keys.env is bind-mounted (same API keys). doctl auth lives in a named volume.
+# DO_TOKEN (and only it) is forwarded per command, so `DO_TOKEN=<token> ./dev.sh ./preflight.sh` works. API is on :8000.
 set -euo pipefail
 cd "$(dirname "$0")"
 N=app-dev
@@ -23,4 +24,4 @@ if [ "$(docker inspect -f '{{.State.Running}}' $N 2>/dev/null)" != true ]; then
 fi
 [ $# -gt 0 ] || set -- bash
 T=-i; [ -t 0 ] && T=-it
-exec docker exec $T -w $H/app $N "$@"
+exec docker exec $T ${DO_TOKEN:+-e DO_TOKEN} -w $H/app $N "$@"

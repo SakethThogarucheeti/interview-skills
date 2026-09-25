@@ -34,6 +34,7 @@ Say it out loud when you catch one: "this read-then-write loses updates under co
   `make check` green → commit, after every file. New behavior = a test in the same commit;
   new counter/quota/aggregate = a concurrency test like `tests/test_concurrency.py`.
 - Host isn't Ubuntu (no apt)? Run commands through the dev container: `./dev.sh <cmd>` (doctl, terraform, gh, uv, Postgres, Redis inside; project mounted; :8000 published). Inside the interview's own container, run them directly.
+- DO token: only ever as `DO_TOKEN=<token> ./preflight.sh` (or `./dev.sh ./preflight.sh`), typed by the user via `!` or pasted once. Never echo it, log it or write it to a file.
 - Every command gets a timeout. Anything slow runs in the background with a log file you `tail`.
   No Docker daemon: `make up-native`.
 - Deploy early and at each milestone (path A: `git push` to main). Verify with `make deployed` and `make e2e URL=…`.
