@@ -1,92 +1,61 @@
-<!-- interview-kit reference file; § numbers match the index in ../SKILL.md -->
+# The app: which file owns what, and how to adapt it
 
-## 4. Scaffold — `scaffold/`, copy it in, then adapt
+The project root already holds a working FastAPI + Postgres + Redis REST API with tests, CI, Terraform and an
+App Platform spec. Read a file when you are about to change or explain it, not up front. Paths are from the
+project root.
 
-The code lives in **`scaffold/`**. `into-project.sh ~/app` copies it into the project root (dotfiles included) along with the playbook in `.kit/`, so normally there's nothing to copy. Manual fallback, from an empty project dir: `cp -R <kit>/scaffold/. .` (the trailing `/.` brings `.github/ .do/ .cursor/ .gitignore`). Then, depending on the prompt:
-```bash
-./strip-ingest.sh                    # ONLY if the prompt is not ingestion/processing (removes §4.20)
-rm -rf frontend                      # unless §1 said a UI is required (§4.16)
-```
-Read a file when you're about to change it or explain it, not up front: the map below says what each one owns. It's a production-shaped FastAPI + Postgres + Redis REST API, layered per §2, with each rubric line covered:
-- **Engineering quality:** env config, validation bounds, one error envelope, no HTTP types in the service.
-- **Testing:** API, unit and concurrency-regression tests, all runnable with no infrastructure.
-- **Automation:** Makefile, lint/format, CI that auto-deploys every push to `main` to DigitalOcean pinned to its commit (§4.21), infrastructure as code (Terraform + App Platform spec, §4.23).
-- **Operational excellence:** JSON logs with request IDs, Prometheus `/metrics`, `/health` vs `/ready`, graceful shutdown, Redis failures degrade to a cache miss, non-root container, deploy mode that keeps the DB off the internet, and every build stamped with its git SHA (`/version`, response header, logs, metric) so "which commit is live?" takes 5 seconds (§4.24).
+## Which file owns what
 
-**Verified end-to-end**: lint clean; 13 base tests + 4 add-on tests pass with no infrastructure, both with and without `strip-ingest.sh` (whose output was diffed against the verified base). The integration test runs 8 concurrent workers against real Postgres and processes 40 contended batches exactly once; removing `SKIP LOCKED` makes it fail 3/3 runs. The prod-mode compose stack came up healthy, and every endpoint was exercised with curl. A Redis outage returns `degraded` and keeps serving; a Postgres outage returns a clean 503 and recovers on restart. The worker stops cleanly on SIGTERM. Version stamping was checked on a prod-mode stack built from a real commit: `/version`, `x-app-version`, `app_build_info` and the image's OCI label all equal the SHA, and `make deployed` reports up to date, then lists the exact undeployed commit after a new one. API + worker starting together on a fresh database used to crash on concurrent `CREATE TABLE` (10/10 runs); the schema advisory lock fixed it (0/10). `infra/main.tf` passes `terraform validate`, `.do/app.yaml` passes DigitalOcean's OpenAPI schema (except documented fields the schema omits), and the workflow passes `actionlint`. **Live on DigitalOcean (2026-09-24):** all three deploy paths (A: App Platform from GitHub, B: CI image with SHA check and `make app-rollback`, C: Droplet) deployed and passed `make e2e`, including auth and the rate limit shared across 2 instances; `terraform apply`/`destroy` ran clean on a fresh account (one transient 412, retried).
+| File(s) | What it owns / the decision to defend |
+|---|---|
+| `AGENTS.md`, `CLAUDE.md`, `.cursor/commands/interview.md` | The runbook. Cursor reads `AGENTS.md` natively, `CLAUDE.md` imports it for Claude Code, `/interview` in Cursor points at it |
+| `preflight.sh` | Setup: tools, DO/GitHub login, git identity, the private repo, API keys in `~/.api_keys.env`, `terraform apply` in the background. Safe to re-run |
+| `strip-ingest.sh` | Removes the ingestion code (for prompts that aren't about ingestion) |
+| `backend/Makefile` | The only command surface (`make -C backend` lists the game-day targets). Recipe lines need real tabs |
+| `backend/requirements.txt`, `requirements-dev.txt` | Runtime deps in the image; test/lint tools only in dev |
+| `backend/Dockerfile` | Slim, non-root, `/health` HEALTHCHECK; `GIT_SHA`/`BUILD_TIME` build args |
+| `backend/docker-compose.yml` | Local Postgres + Redis on 127.0.0.1 for hosts where Docker works (`make -C backend up`); otherwise `up-native` |
+| `backend/app/config.py` | Every setting, read from env once at startup (a bad value fails fast). `REDIS_URL=""` disables the cache |
+| `backend/app/observability.py` | JSON logs with `request_id` + `version`, `x-request-id`, Prometheus metrics by route template, `x-app-version` |
+| `backend/app/errors.py` | `AppError` -> NotFound/Conflict/PayloadTooLarge/Unavailable; one envelope `{error:{code,message,request_id,details}}` for every error, 500s without leaking |
+| `backend/app/models.py` | `Item` create/update/page shapes: bounds on every field, whitespace stripped, `extra="forbid"` |
+| `backend/app/repository.py` | `ItemRepository` Protocol + in-memory (tests) + Postgres. `update_fields` is one atomic `UPDATE … COALESCE … RETURNING` (the graded race). Schema created at startup under an advisory lock |
+| `backend/app/cache.py` | Cache-aside; every Redis error becomes a miss + a log line, never a 500 |
+| `backend/app/service.py` | Business rules; depends only on the repository/cache Protocols; raises `errors.py` errors, never `HTTPException` |
+| `backend/app/deps.py` | Wiring: settings -> pool -> repository/cache -> service; test mode uses in-memory |
+| `backend/app/main.py` | Thin plain-`def` routes: CRUD + paginated list, `/health`, `/ready`, `/version`, `/metrics` |
+| `backend/app/security.py` | API key (`X-API-Key` or `Bearer`) from `API_KEYS=name:key[:limit],…`, then a per-client sliding-window rate limit in Redis (atomic Lua). 401/429 in the envelope. `/health /ready /version /metrics /docs` stay open. Empty `API_KEYS` = auth off in dev/test, refuses to start in prod |
+| `backend/app/events.py` | Redis pub/sub, not wired in. Use it only if the prompt needs live updates |
+| `backend/app/ingest_*.py`, `backend/app/worker.py` | Ingestion (see "Ingestion design" below) |
+| `backend/tests/` | `test_api.py` (status codes, envelope, validation, pagination), `test_service.py` (dead Redis), `test_concurrency.py` (concurrent PATCHes both survive), `test_security.py`, `test_ingest.py`. `make -C backend check` runs them in seconds with no infra |
+| `backend/e2e.py` | `make -C backend e2e`: ~40 checks against the live app (auth, CRUD, ingest -> worker -> exact totals under concurrent writers, 429s). Rename its `/items` requests when you rename the entity |
+| `.github/workflows/ci.yml` | Lint, tests, Postgres integration tests and an image build on every push |
+| `infra/main.tf` | Terraform: managed Postgres + Valkey, applied by `./preflight.sh` |
+| `.do/app.yaml` | The App Platform spec: builds from GitHub on every push, 2 API instances, worker, health checks, alerts |
+| `frontend/` | Optional Vite + React UI. Delete it unless they asked for a UI; `/docs` (Swagger) is the demo UI |
+| `dev.sh`, `.devcontainer/` | Ubuntu 24 dev container for practice on a non-Ubuntu host (see the last section) |
 
-**File map** (paths relative to `scaffold/`; the § numbers are what the rest of this kit cites):
+## Adapt to the prompt (rename and extend, don't rewrite)
 
-| § | File(s) | What it owns / the decision to defend |
-|---|---|---|
-| — | `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `.cursor/commands/interview.md` | Ignores (venv, node_modules, .env, tfstate). `AGENTS.md` is the one always-on rule set (Cursor reads it natively; `CLAUDE.md` imports it for Claude Code); `/interview` in Cursor just points at it |
-| 4.1 | `backend/requirements.txt`, `requirements-dev.txt` | Minimum-version runtime deps in the image; test/lint tools only in dev |
-| 4.2 | `backend/Dockerfile`, `.dockerignore` | Slim, non-root, `/health` HEALTHCHECK; `GIT_SHA`/`BUILD_TIME` build args → env + OCI `revision` label |
-| 4.3 | `backend/docker-compose.yml`, `docker-compose.override.yml` | Postgres + Redis with healthchecks, app, worker. The override (auto-merged locally) publishes DB/Redis on 127.0.0.1; `make deploy` uses `-f docker-compose.yml` only, so on a Droplet just the app port is reachable |
-| 4.4 | `backend/Makefile`, `pytest.ini`, `ruff.toml`, `preflight.sh`, `backend/e2e.py` | The one command surface: `install up up-native run test test-int lint fmt check image deploy deployed e2e preflight api-key app-create app-status app-deploy app-rollback`. Install, rsync/ssh and `doctl` steps have timeouts (skipped if neither `timeout` nor `gtimeout` exists). Recipe lines need real tabs if you ever retype it |
-| 4.5 | `app/config.py` | Frozen `Settings` from env, parsed once at startup (a bad value fails fast); `REDIS_URL=""` disables the cache; `GIT_SHA`/`BUILD_TIME` |
-| 4.6 | `app/observability.py` | JSON log lines with `request_id` + `version`; request-ID middleware (`x-request-id`); Prometheus counter/histogram labeled by route *template*; `app_build_info{git_sha}`; `x-app-version` header |
-| 4.7 | `app/errors.py` | `AppError` → NotFound/Conflict/PayloadTooLarge/Unavailable; one envelope `{error:{code,message,request_id,details}}` for domain, validation, HTTP, DB-down (503) and unhandled (500, no leak) errors |
-| 4.8 | `app/models.py` | `Item` create/update/page shapes: bounds on every field, whitespace-stripped, `extra="forbid"` on inputs |
-| 4.9 | `app/repository.py` | `ItemRepository` Protocol + in-memory (tests) + Postgres (shared `psycopg_pool`). Partial update is one atomic `UPDATE … COALESCE … RETURNING` (the graded race). Schema DDL under a Postgres advisory lock so N processes can boot at once |
-| 4.10 | `app/cache.py` | Cache-aside wrapper; every Redis error becomes a miss + a log line, never a 500 |
-| 4.11 | `app/service.py` | Business rules; depends only on the repository/cache Protocols; raises domain errors, never `HTTPException` |
-| 4.12 | `app/deps.py` | Wiring: settings → pool → repository/cache → service; test mode swaps in in-memory; `close_resources()` on shutdown |
-| 4.13 | `app/main.py` | Thin plain-`def` routes (threadpool, no blocking in the event loop), CRUD + paginated list, `/health`, `/ready`, `/version`, `/metrics`, CORS from env, lifespan startup/shutdown |
-| 4.14 | `backend/tests/` | `conftest.py` (dependency overrides, fresh in-memory repo per test), `test_api.py` (status codes, envelope, validation, pagination, request IDs, `/version`), `test_service.py` (failure modes with fakes: dead Redis, no cache), `test_concurrency.py` (threaded PATCHes to different fields both survive). `make test` runs them in ~0.1s with no infra |
-| 4.15 | `app/events.py` (optional, not wired) | Redis pub/sub publisher/subscriber (Observer). Wire it in only if the prompt needs live/multi-consumer updates |
-| 4.16 | `frontend/` (optional) | Vite + React: `src/api.js` (the only fetch client, error envelope → message), `src/App.jsx` (list/create/delete, loading + error states, inline styles). Delete it for an API-only brief; `/docs` (Swagger) is the demo UI |
-| 4.17 | `dev.sh`, `.devcontainer/Dockerfile` | For a non-Ubuntu host (practice only). `./dev.sh <cmd>` builds/starts an `ubuntu:24.04` container (doctl, terraform, gh, uv, Postgres, Redis baked in; project bind-mounted; host `gh` token and `DO_TOKEN` passed per command, never stored in the container; `~/.api_keys.env` shared; doctl auth in the `app-dev-doctl` volume; API on `127.0.0.1:8000`; recreated if it is mounted on another project) and runs `<cmd>` in it |
-| 4.20 | `app/ingest_*.py`, `app/worker.py`, `tests/test_ingest.py` | Ingestion add-on (below); removed by `strip-ingest.sh` |
-| 4.21 | `.github/workflows/ci.yml` | Lint → tests → Postgres + Redis integration → image → auto-deploy on main (needs the `API_KEYS` secret), verified by SHA |
-| 4.23 | `infra/main.tf`, `.do/app.yaml`, `.do/app.image.yaml` | Terraform (registry, managed PG + Valkey, optional Droplet + firewall) and the App Platform spec in two flavors: build from GitHub (path A) and prebuilt image (path B) |
-| 4.25 | `app/security.py`, `tests/test_security.py` | One middleware before every non-ops route: API key (`X-API-Key` or `Bearer`) from `API_KEYS=name:key[:limit],…` (hashes only in memory), then a per-client sliding-window rate limit in Redis (atomic Lua; in-memory for tests). 401/429 use the error envelope; 429 has `Retry-After`, successes carry `X-RateLimit-*`. Ops paths (`/health /ready /version /metrics /docs`) stay open for health checks and the SHA check. Empty `API_KEYS` = auth off in dev/test, **refuses to start in prod**. Redis down = fail open. `/docs` gets an Authorize button. `make api-key NAME=x` mints a key |
+One file at a time, in this order. After each: audit the diff, `make -C backend check`, commit.
+1. **`backend/app/models.py`**: rename `Item`/`ItemCreate`/`ItemUpdate`/`ItemPage` to the real entity. Change the
+   fields, keeping bounds on every field and `extra="forbid"`. A second resource gets its own module with the same shape.
+2. **`backend/app/repository.py`**: rename the Protocol and classes, update the schema and SQL. Add an index for
+   every new non-PK lookup. New queries go here, not in routes.
+3. **`backend/app/service.py`**: the prompt's rules, raising `errors.py` errors. Any new write goes through one
+   atomic repository statement like `update_fields`, never read-then-write in the service.
+4. **`backend/app/main.py`**: rename routes, add endpoints. Keep them thin and plain `def`.
+5. **`backend/app/config.py`**: every new limit, TTL or flag becomes a setting read from env.
+6. **Tests**: rename in `test_api.py` (and the other tests that use `Item`), add one test per new rule. For a new
+   counter, quota or balance, copy `test_concurrency.py`.
+7. **`backend/e2e.py`**: rename the `/items` requests and payloads.
+8. **Ingestion prompt?** The code is already in: rename `EventIn` in `ingest_models.py` to the prompt's record, and
+   change the aggregate SQL in `ingest_repository.py` to whatever "processing" means.
+9. **Frontend (only if asked)**: rename the `frontend/src/api.js` methods, replace the `App.jsx` view, inline styles only.
 
-### 4.17 Setup commands
+Don't change: the layering, Postgres live + in-memory for tests, the error envelope, `/health` vs `/ready`.
 
-**Preflight the container first (~1 min): `./preflight.sh`** from the project root automates all of this plus auth checks, key generation and a background `terraform apply` (re-run it any time; it skips what's done). The manual equivalent, if it can't run:
-```bash
-for t in git python3 uv docker make gh doctl terraform jq node; do printf '%-9s' $t; command -v $t >/dev/null && echo ok || echo MISSING; done
-docker info >/dev/null 2>&1 && echo "docker daemon ok" || echo "docker daemon DOWN (expected in a container: use make up-native)"
-```
-- **Not on Ubuntu (Arch, macOS, …)**: the `apt` installs below fail, so use the dev container. Run `./dev.sh ./preflight.sh` (with `DO_TOKEN=<token>` in front the first time; `dev.sh` forwards it), then `./dev.sh bash -c 'cd backend && make install check up-native'`, or `./dev.sh` for a shell. Everything in this section then runs unchanged inside it. Gotchas:
-  - Run `make`, `uv` and `python` only through `./dev.sh`. `backend/.venv` is shared with the host, and a host-side `uv run` rebuilds it with the wrong interpreter.
-  - Servers started in a one-shot `./dev.sh bash -c …` die with that command; start them with `setsid`.
-  - Never `pkill -f <name>` from a command line that contains `<name>`, because it kills its own shell.
-  - The API is published on `127.0.0.1:8000`. Running `./dev.sh` from a different project recreates the container on that project.
-- **No `uv`:** `curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH=$HOME/.local/bin:$PATH`.
-- **No `terraform`:** preflight installs it. By hand: `a=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); curl -fsSLo /tmp/tf.zip https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_$a.zip && sudo unzip -oq /tmp/tf.zip -d /usr/local/bin` (`sudo apt-get install -y unzip` first if missing). Or skip Terraform entirely (the dev-database route in §4.19).
-- **No Docker daemon (likely):** don't fight Docker-in-Docker. `make up-native` installs Postgres + Redis with apt and starts them on the same URLs compose uses, so `make run`, `make test-int` and the worker work unchanged (verified in `ubuntu:24.04`: ~30 s). Deploy with a path where DigitalOcean builds the image (§4.19 A/B/C). `make up`, `make image` and `make app-deploy` need Docker.
-
-Then, after the copy step at the top of §4 (`.gitignore` comes with it):
-```bash
-git init -b main && git add -A && git commit -m "Scaffold from interview-kit"   # -b main: deploys track main
-cd backend && make install > /tmp/install.log 2>&1 && make check   # lint + tests green before touching anything
-```
-Then start these in the background, each logged so you can check progress without blocking. Use `uv run` (which the Makefile does), not `source .venv/bin/activate`: activation doesn't carry over to a new shell or tool call.
-```bash
-# from backend/
-make up-native                           # or `make up` if Docker works; postgres + redis, returns when up
-make run > /tmp/uvicorn.log 2>&1 &       # API on :8000, JSON logs; /docs is the demo UI
-# from frontend/ (only if building one)
-npm install --no-audit --no-fund > /tmp/npm-install.log 2>&1 && npm run dev > /tmp/vite.log 2>&1 &
-```
-Check readiness with `curl localhost:8000/ready` / `tail /tmp/uvicorn.log` instead of guessing. Optional, 10 seconds, and visible automation: `printf '#!/bin/sh\nmake -C backend check\n' > .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit`.
-
-### 4.18 Adapt to the actual prompt (rename-and-extend, not a rewrite)
-
-1. **`models.py`** — rename `Item`/`ItemCreate`/`ItemUpdate`/`ItemPage` to the real entity. Change the fields, keeping bounds on every field and `extra="forbid"` on inputs. Add a second entity module with the same shape if the prompt has more than one resource.
-2. **`repository.py`** — rename the Protocol and classes and update the schema/SQL. Add an index for every new non-PK lookup. Query methods the prompt needs go here, not in routes.
-3. **`service.py`** — the prompt's business rules live here and raise `errors.py` types, never `HTTPException`. Any *new* mutating operation goes through one atomic repository statement like `update_fields`, never read-then-write in the service. That's the graded bug (§1).
-4. **`main.py`** — rename routes and add non-CRUD endpoints. Keep them thin.
-5. **`config.py`** — every new tunable (limits, TTLs, feature flags) becomes a `Settings` field read from env, never a magic number in code.
-6. **Tests** — rename in `test_api.py` and add one test per new rule. For any new counter, quota or balance, copy `test_concurrency.py`'s shape.
-7. **Ingestion prompt?** §4.20 is already in (don't run `strip-ingest.sh`); rename `EventIn` to the prompt's record type, and change the aggregate SQL to whatever "processing" means in the prompt.
-8. **Frontend (if any)** — rename `api.js` methods and replace the `App.jsx` view. Inline styles only.
-
-**Don't change unless required**: the layering; Postgres as the live default + in-memory for tests; the error envelope; `/health` vs `/ready`; the compose override split.
-
-### 4.20 Ingestion & processing add-on (the recruiter's brief: "data ingestion and processing")
+## Ingestion design
 
 ```
 client --POST /ingest (JSON batch) or /ingest/csv--> [API: validate each record, dedupe, store + enqueue in ONE tx] --202 {batch_id}-->
@@ -96,15 +65,39 @@ client --POST /ingest (JSON batch) or /ingest/csv--> [API: validate each record,
                                   [worker x N: claim batch FOR UPDATE SKIP LOCKED -> atomic upsert aggregate -> completed]
 client --GET /ingest/{batch_id} (status) , GET /totals (results)
 ```
+Design calls to say out loud (also `design-decisions.md` material):
+- **Accept fast, process async.** The request only validates, stores and enqueues; 202 + a status URL.
+- **Per-record validation, partial success.** One bad record doesn't fail the batch; rejects are listed by index with a reason.
+- **Idempotent.** The client's `event_id` + `ON CONFLICT DO NOTHING` makes retries safe; duplicates are counted.
+- **Postgres is the queue.** Enqueue is in the same transaction as the data, so nothing is stored but not queued,
+  and there's no broker to run. `FOR UPDATE SKIP LOCKED` lets N workers share it. Claim -> process -> complete is
+  one transaction, so a crashed worker's batch goes back to pending. A poison batch becomes `failed` after
+  `WORKER_MAX_ATTEMPTS`. At higher scale: Redis Streams/SQS/Kafka behind the same repository.
+- **Backpressure.** Batch-size cap (413) and pending-backlog cap (503 + `Retry-After`).
+- **Traps already handled:** double processing (`SKIP LOCKED`), lost updates in the aggregate (atomic upsert),
+  lock-order deadlocks (`ORDER BY` in the aggregate), blocking the event loop (plain `def` routes, CSV parsing included).
 
-Design calls to say out loud (they're also `design-decisions.md` material):
-- **Accept fast, process async.** The request only validates, stores and enqueues, so latency stays bounded whatever processing costs. `202 Accepted` + a status URL is the honest contract.
-- **Per-record validation, partial success.** One bad record doesn't 422 the whole batch. The response lists each rejected index with its reason.
-- **Idempotent by design.** A client-supplied `event_id` + `ON CONFLICT DO NOTHING` makes retries safe, and duplicates are counted and reported.
-- **Postgres as the queue.** Enqueueing happens in the same transaction as the data, so there's no stored-but-not-queued state and no extra broker to deploy. `FOR UPDATE SKIP LOCKED` lets N workers share it safely. The whole claim → process → complete runs in one transaction, so a crashed worker's batch just becomes pending again. A poison batch is marked `failed` after `WORKER_MAX_ATTEMPTS`. At higher scale, move to Redis Streams / SQS / Kafka with consumer groups; the repository seam is where that swap happens.
-- **Backpressure.** A batch-size cap (413) and a pending-backlog cap (503 + `Retry-After`) shed load instead of queueing without bound.
-- **The graded traps, pre-empted:** two workers double-processing a batch (fixed by `SKIP LOCKED`), a lost update in the aggregate (fixed by an atomic upsert, not read-modify-write in Python), lock-order deadlocks (fixed by `ORDER BY` in the aggregate), and a blocking call in the event loop (fixed by plain `def` routes, including CSV parsing).
+Files: `ingest_models.py` (record + batch shapes), `ingest_repository.py` (store + enqueue, dedupe, claim, atomic
+aggregate), `ingest_service.py` (per-record validation, caps), `ingest_routes.py` (`POST /ingest`, `POST
+/ingest/csv`, `GET /ingest/{batch_id}`, `GET /totals`), `worker.py` (`python -m app.worker`, stops cleanly on
+SIGTERM), `tests/test_ingest.py`. `make -C backend test-int` runs the 8-worker exactly-once test against the local Postgres.
 
-Files: `app/ingest_models.py` (`EventIn` record + batch shapes, per-record bounds), `app/ingest_repository.py` (store + enqueue in one transaction, `ON CONFLICT DO NOTHING` dedupe, `FOR UPDATE SKIP LOCKED` claim, atomic upsert aggregate with `ORDER BY`, attempts → `failed`), `app/ingest_service.py` (per-record validation, batch and backlog caps), `app/ingest_routes.py` (`POST /ingest`, `POST /ingest/csv`, `GET /ingest/{batch_id}`, `GET /totals`, all plain `def`), `app/worker.py` (`python -m app.worker`, graceful SIGTERM, backoff on errors), `tests/test_ingest.py` (partial success, dedupe, caps, and the `integration`-marked 8-worker exactly-once test). Wired in via `deps.py`, `main.py`, the compose `worker` service and the `.do/app.yaml` `workers:` block; `strip-ingest.sh` removes all of it.
+## What's been verified
 
-Verify: `make test` (unit, no infra), then `make up && make test-int`, which runs the concurrent-workers exactly-once test against real Postgres.
+Lint clean; all tests pass with and without `strip-ingest.sh`. The 8-worker integration test processes 40 contended
+batches exactly once (and fails 3/3 without `SKIP LOCKED`). Redis down = `degraded` and still serving; Postgres
+down = clean 503 and recovery. Deployed live on DigitalOcean (2026-09-24) and passed `make e2e`, including auth and
+the rate limit shared across 2 instances.
+
+## Non-Ubuntu host (practice only)
+
+On Arch/macOS, preflight's `apt` installs fail, so run everything in the dev container: put `./dev.sh` in front
+of every command (`./dev.sh ./preflight.sh`, `./dev.sh make -C backend check`), or `./dev.sh` alone for a shell.
+It has doctl, terraform, gh, uv, Postgres and Redis, reuses the host's `gh` login, passes `DO_TOKEN` per command
+(never stored), and publishes the API on `127.0.0.1:8000`.
+- Run `make`, `uv` and `python` only through `./dev.sh`: `backend/.venv` is shared with the host, and a host-side
+  `uv run` rebuilds it with the wrong interpreter.
+- A server started with `./dev.sh bash -c '…'` dies with that command; start it with `setsid`:
+  `./dev.sh bash -c 'setsid make -C backend run > /tmp/api.log 2>&1 &'`.
+- Never `pkill -f <name>` from a command line that contains `<name>`: it kills its own shell.
+- Running `./dev.sh` from a different project recreates the container on that project.

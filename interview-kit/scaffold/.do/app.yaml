@@ -1,10 +1,9 @@
-# App Platform spec, build-from-GitHub flavor (the default): App Platform clones
+# App Platform spec: App Platform clones
 # the repo, builds backend/Dockerfile and redeploys on every push to main
 # (deploy_on_push) -- no CI, registry or local Docker needed. `make app-create`
 # fills ${GITHUB_REPO} and applies it; re-run it after editing this file (a push
 # redeploys code, not spec changes). GIT_SHA comes from App Platform's
-# ${_self.COMMIT_HASH}, so /version still names the live commit.
-# .do/app.image.yaml is the prebuilt-image flavor (CI / make app-deploy).
+# ${_self.COMMIT_HASH}, so /version names the live commit.
 name: interview-app
 region: nyc
 alerts:
@@ -23,7 +22,7 @@ envs:
   - key: REDIS_URL
     value: ${cache.DATABASE_URL}
     scope: RUN_TIME
-  - key: API_KEYS  # name:key[:limit],... filled from your shell/CI secret; DO stores it encrypted
+  - key: API_KEYS  # name:key[:limit],... filled from ~/.api_keys.env by make app-create; DO stores it encrypted
     value: ${API_KEYS}
     type: SECRET
     scope: RUN_TIME
@@ -56,7 +55,7 @@ services:
         value: 500
         window: FIVE_MINUTES
 workers:
-  - name: worker  # ingestion add-on (section 4.20); same Dockerfile, different command
+  - name: worker  # ingestion (removed by strip-ingest.sh); same Dockerfile, different command
     github:
       repo: ${GITHUB_REPO}
       branch: main

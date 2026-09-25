@@ -1,15 +1,16 @@
 # One entry point for humans and CI alike -- the CI workflow calls these targets.
-.PHONY: preflight install up up-native run test test-int lint fmt check image deploy deployed e2e api-key app-create app-status app-deploy app-rollback
+# Run from the project root as `make -C backend <target>`; plain `make -C backend` lists them.
+.PHONY: help preflight install up up-native run test test-int lint fmt check image deployed e2e api-key app-create app-status
 DB ?= postgresql://postgres:postgres@localhost:5432/app
 REDIS ?= redis://localhost:6379/15
-# Every image is stamped with the commit it was built from (served at /version).
+# `make run` and CI's image build are stamped with the commit (served at /version; App Platform
+# sets it from the pushed commit).
 # "-dirty" marks a build with uncommitted changes -- it matches no commit.
 GIT_SHA ?= $(shell if git rev-parse -q --verify HEAD >/dev/null 2>&1; then \
 	printf %s "$$(git rev-parse HEAD)"; git diff --quiet HEAD || printf -- -dirty; else echo dev; fi)
 BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 export GIT_SHA BUILD_TIME
 APP_NAME := $(shell awk '/^name:/ {print $$2; exit}' ../.do/app.yaml 2>/dev/null)
-APP_IMAGE = registry.digitalocean.com/$(REGISTRY)/app:$(GIT_SHA)
 # Looked up only when a target uses them (recursive =), so no doctl/gh call otherwise.
 APP_ID = $(shell doctl apps list --format ID,Spec.Name --no-header | awk -v n=$(APP_NAME) '$$2==n {print $$1}')
 APP_URL = $(shell doctl apps list --format Spec.Name,DefaultIngress --no-header | awk -v n=$(APP_NAME) '$$1==n {print $$2}')
@@ -18,10 +19,26 @@ URL ?= $(APP_URL)
 # macOS has no `timeout`; use coreutils' gtimeout if present, else run unbounded.
 TIMEOUT := $(shell command -v timeout || command -v gtimeout)
 to = $(if $(TIMEOUT),$(TIMEOUT) $(1))
-# Fill a spec's placeholders. API_KEYS is read from the environment by the shell ($$),
+# Fill the spec's placeholders. API_KEYS is read from the environment by the shell ($$),
 # so the secret never shows up in make's echoed command or in a log.
-fill = sed -e 's|$${GITHUB_REPO}|$(REPO)|g' -e 's|$${IMAGE_TAG}|$(1)|g' -e "s|\$${API_KEYS}|$$API_KEYS|g" $(2)
-need-keys = @test -n "$$API_KEYS" || { echo 'export API_KEYS=name:key,... first (make api-key NAME=you)'; exit 1; }
+fill = sed -e 's|$${GITHUB_REPO}|$(REPO)|g' -e "s|\$${API_KEYS}|$$API_KEYS|g" $(1)
+# Load API_KEYS from ./preflight.sh's ~/.api_keys.env unless the shell already has it. Prefix the
+# recipe line that needs the keys, since every recipe line is its own shell.
+load-keys = { [ -n "$$API_KEYS" ] || { [ ! -f "$(HOME)/.api_keys.env" ] || { set -a; . "$(HOME)/.api_keys.env"; set +a; }; }; };
+with-keys = $(load-keys) { [ -n "$$API_KEYS" ] || { echo 'no API_KEYS: run ./preflight.sh (writes ~/.api_keys.env)'; exit 1; }; };
+
+help:  # the default target
+	@echo 'Game day (run from the project root):'
+	@echo '  make -C backend install      create .venv and install deps'
+	@echo '  make -C backend check        lint + unit tests (must be green before every commit)'
+	@echo '  make -C backend up-native    start Postgres + Redis without Docker'
+	@echo '  make -C backend run          API on :8000 (run it in the background with a log)'
+	@echo '  make -C backend test-int     integration tests against the local Postgres + Redis'
+	@echo '  make -C backend app-create   create/update the App Platform app (once, and after editing .do/app.yaml)'
+	@echo '  make -C backend deployed     is the live app running local HEAD?'
+	@echo '  make -C backend e2e          ~40 live checks against the deployed app'
+	@echo '  make -C backend app-status   recent App Platform deployments'
+	@echo 'Also: up (Postgres + Redis via Docker, if it works), test, lint, fmt, image (CI), api-key'
 
 preflight:  # game-day minute 0: tools, auth, keys, background terraform, then a human checklist
 	@../preflight.sh
@@ -50,13 +67,7 @@ fmt:
 check: lint test
 image:
 	docker build -q --build-arg GIT_SHA --build-arg BUILD_TIME -t app:$(GIT_SHA) .
-deploy:  # make deploy HOST=<droplet-ip>
-	$(call to,120) rsync -az --delete --exclude .venv --exclude __pycache__ --exclude .env ./ root@$(HOST):/root/app/
-	$(call to,300) ssh root@$(HOST) "cd /root/app && GIT_SHA=$(GIT_SHA) BUILD_TIME=$(BUILD_TIME) APP_PORT=80 \
-		docker compose -f docker-compose.yml up -d --build --wait"
-	$(call to,10) curl -fsS http://$(HOST)/ready
-	@$(MAKE) --no-print-directory deployed URL=http://$(HOST)
-deployed:  # is live == local HEAD? URL defaults to this App Platform app; pass URL=http://<droplet-ip> otherwise
+deployed:  # is live == local HEAD? URL defaults to this App Platform app
 	@test -n "$(URL)" || { echo "no URL: pass URL=... (or create the app first)"; exit 1; }
 	@# A new app's hostname can be negatively cached locally for 30 min if looked up before its DNS
 	@# record existed, so resolve it via public DNS-over-HTTPS and pin the IP with curl --resolve.
@@ -75,33 +86,15 @@ deployed:  # is live == local HEAD? URL defaults to this App Platform app; pass 
 	git log --oneline $$live..HEAD 2>/dev/null || echo "(live sha not in local history)"; fi
 e2e:  # make e2e [URL=...] [KEY=...] -- 40-ish live checks incl. auth, races, rate limit (key: KEY or first of $$API_KEYS)
 	@test -n "$(URL)" || { echo "no URL: pass URL=... (or create the app first)"; exit 1; }
-	python3 e2e.py $(URL)
+	@$(load-keys) python3 e2e.py $(URL)
 api-key:  # make api-key NAME=alice -> one name:key entry for API_KEYS (comma-join several)
 	@python3 -c 'import secrets, sys; print(sys.argv[1] + ":" + secrets.token_urlsafe(24))' $(or $(NAME),client)
 # make app-create -- App Platform builds from your GitHub repo (REPO defaults to the
 # gh remote) and redeploys on every push to main. Re-run after editing .do/app.yaml.
 app-create:
 	@test -n "$(REPO)" || { echo "no GitHub repo: gh repo create <name> --private --source=.. --push"; exit 1; }
-	$(need-keys)
-	$(call fill,,../.do/app.yaml) | $(call to,1200) doctl apps create --spec - --upsert --wait
+	$(with-keys) $(call fill,../.do/app.yaml) | $(call to,1200) doctl apps create --spec - --upsert --wait
 	@$(MAKE) --no-print-directory deployed
 # Recent deployments: Cause names the commit for GitHub-built deploys.
 app-status:
 	doctl apps list-deployments $(APP_ID) --format ID,Cause,Phase,Created --no-header | head -5
-# make app-deploy REGISTRY=<docr-name> -- the CI App Platform job, run where Docker works.
-# --platform: App Platform runs amd64; a Mac builds arm64 by default and the app
-# would crash-loop. fill replaces IMAGE_TAG and API_KEYS; the db./cache. bindable
-# variables in the spec are App Platform's to resolve at deploy time.
-app-deploy:
-	doctl registry login --expiry-seconds 1200
-	docker build -q --platform linux/amd64 --build-arg GIT_SHA --build-arg BUILD_TIME -t $(APP_IMAGE) .
-	docker push -q $(APP_IMAGE)
-	$(need-keys)
-	$(call fill,$(GIT_SHA),../.do/app.image.yaml) | $(call to,900) doctl apps create --spec - --upsert --wait
-	@$(MAKE) --no-print-directory deployed
-# make app-rollback REGISTRY=<name> SHA=<old full sha> -- re-point the app at an
-# image that's already in the registry (every deploy pushed one). No rebuild, so
-# the rollback runs exactly the bits that ran before.
-app-rollback:
-	$(need-keys)
-	$(call fill,$(SHA),../.do/app.image.yaml) | $(call to,900) doctl apps create --spec - --upsert --wait

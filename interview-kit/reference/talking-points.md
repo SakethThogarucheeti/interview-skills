@@ -1,6 +1,4 @@
-<!-- interview-kit reference file; § numbers match the index in ../SKILL.md -->
-
-## 3. Talking points for common HLD follow-ups
+# Talking points for common walkthrough questions
 
 Current state → bottleneck → concrete next step, grounded in the actual code just written, not generic vocabulary.
 
@@ -14,7 +12,7 @@ Current state → bottleneck → concrete next step, grounded in the actual code
 
 **Reliability?** Idempotency key or upsert on retryable writes. Timeouts + backoff on outbound calls. Stateless app, so a crashed instance is just replaced.
 
-**Deploy/monitor?** Already done by the time it's asked (§4.19), so describe what you built. It's containerized (non-root image with a healthcheck). Every push to main deploys that exact commit: App Platform builds it from GitHub (or CI builds `app:<sha>` and proves the live `/version` matches; §4.19, §4.21). Rollback redeploys an earlier build, with no rebuild (§4.24). It emits JSON logs with request IDs, Prometheus metrics, and liveness vs readiness. Alert on symptoms: 5xx rate, p95 latency, `/ready` failing, and for ingestion, backlog depth/age (`pending_count`) plus a rising `failed` batch count. Next steps if pushed: Prometheus + Grafana scraping `/metrics`, OpenTelemetry tracing keyed on the same request ID, autoscaling, managed-DB standby nodes and read replicas, Terraform plan/apply in CI with Spaces-backed state (§4.21), and DOKS if App Platform is outgrown (§4.22).
+**Deploy/monitor?** Already done by the time it's asked, so describe what you built. It's containerized (non-root image with a healthcheck). Every push to main deploys that exact commit: App Platform builds it from GitHub, CI runs the tests on the same push, and `/version` names the live commit. Rollback redeploys an earlier build, with no rebuild. It emits JSON logs with request IDs, Prometheus metrics, and liveness vs readiness. Alert on symptoms: 5xx rate, p95 latency, `/ready` failing, and for ingestion, backlog depth/age (`pending_count`) plus a rising `failed` batch count. Next steps if pushed: Prometheus + Grafana scraping `/metrics`, OpenTelemetry tracing keyed on the same request ID, autoscaling, managed-DB standby nodes and read replicas, Terraform plan/apply in CI with Spaces-backed state, and DOKS if App Platform is outgrown.
 
 **Ingestion at 100x?** Current: the API validates + stores + enqueues in one transaction, and N workers drain a Postgres queue. In order of effort:
 - (a) scale API replicas and `--scale worker=N`: both are stateless, and `SKIP LOCKED` makes N workers safe;
@@ -23,6 +21,6 @@ Current state → bottleneck → concrete next step, grounded in the actual code
 - (d) past roughly thousands of batches/sec, move the queue to Redis Streams/SQS/Kafka with consumer groups, behind the same repository seam, keeping idempotent consumers since delivery stays at-least-once.
 Name the trade-off: Postgres-as-queue buys transactional enqueue and zero extra infra at the cost of peak throughput.
 
-**Configuration / secrets?** Everything is env (§4.5): the same image runs in CI, locally and in prod, and bad config fails at startup. Secrets never touch git: App Platform injects DB credentials through bindable vars (`${db.DATABASE_URL}`), CI holds the DO token as a secret, and the Droplet has a `.env`. Next step: App Platform `type: SECRET` env vars or a secrets manager.
+**Configuration / secrets?** Everything is env (`config.py`): the same image runs in CI, locally and in prod, and bad config fails at startup. Secrets never touch git: App Platform injects DB credentials through bindable vars (`${db.DATABASE_URL}`), and `API_KEYS` is an encrypted App Platform `SECRET`. Next step: a secrets manager with rotation.
 
-**Business trade-offs / "what would you do with more time" / downtime windows?** Expect this alongside the technical questions — DigitalOcean frames the post-build conversation as covering both. Ground it in what you actually cut, e.g. "skipped read replicas and HA — no payoff at this scale, and the repository seam (§2) makes adding one later a config change, not a rewrite." For downtime: stateless instances mean a rolling restart is zero-downtime; the one real SPOF is non-replicated Postgres/Redis, and the honest answer is a maintenance window or managed failover, not built here for time. Naming the real gap and its cost/benefit beats pretending it's handled.
+**Business trade-offs / "what would you do with more time" / downtime windows?** Expect this alongside the technical questions — DigitalOcean frames the post-build conversation as covering both. Ground it in what you actually cut, e.g. "skipped read replicas and HA — no payoff at this scale, and the repository seam makes adding one later a config change, not a rewrite." For downtime: stateless instances mean a rolling restart is zero-downtime; the one real SPOF is non-replicated Postgres/Redis, and the honest answer is a maintenance window or managed failover, not built here for time. Naming the real gap and its cost/benefit beats pretending it's handled.

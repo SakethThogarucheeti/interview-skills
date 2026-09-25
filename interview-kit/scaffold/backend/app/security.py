@@ -136,8 +136,8 @@ def _presented_key(request: Request) -> str | None:
 
 
 def _client_ip(request: Request) -> str:
-    # App Platform puts the real client IP in do-connecting-ip. Spoofable when the
-    # app is reached directly (Droplet), which only matters with auth off.
+    # App Platform puts the real client IP in do-connecting-ip. Absent when the
+    # app is reached directly (local runs), so fall back to the socket peer.
     return request.headers.get("do-connecting-ip") or (request.client.host if request.client else "unknown")
 
 

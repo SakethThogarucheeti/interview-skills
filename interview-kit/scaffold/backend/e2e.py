@@ -5,7 +5,7 @@ endpoints, auth, CRUD + error envelopes, ingest -> worker -> totals with 20
 concurrent writers (a lost-update race would undercount), and the rate limit
 (last, since it spends this key's budget for a minute). Test data uses a random
 source name and items are deleted. KEY defaults to the first key in $API_KEYS.
-Rename /items and the payloads here when you rename the entity (section 4.18)."""
+Rename /items and the payloads here when you rename the entity."""
 
 import concurrent.futures as cf
 import json
@@ -26,8 +26,8 @@ HOST = BASE.split("://")[1].split("/")[0].split(":")[0]
 
 
 def _pin_dns() -> None:
-    """A new *.ondigitalocean.app host can be negatively cached locally for 30 min
-    (section 4.19): resolve via DNS-over-HTTPS and pin it, like `make deployed`."""
+    """A new *.ondigitalocean.app host can be negatively cached locally for 30 min,
+    so resolve via DNS-over-HTTPS and pin it, like `make deployed`."""
     try:
         socket.gethostbyname(HOST)
         return

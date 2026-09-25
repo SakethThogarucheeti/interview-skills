@@ -31,8 +31,8 @@ the DigitalOcean token when you ask, and then paste the interview prompt.
    - Preflight then sets the git identity, creates and pushes the private GitHub repo, and starts
      Terraform (managed Postgres + Valkey, ~6 min) in the background.
    - The one step that can't be scripted: give the user the DigitalOcean console click-path it prints.
-4. **Hand over:** read `AGENTS.md` and `.kit/SKILL.md`, confirm setup in 2–3 lines, and ask for the
-   interview prompt. From then on, `AGENTS.md` drives.
+4. **Hand over:** read `AGENTS.md` (the runbook), confirm setup in 2–3 lines, and ask for the interview
+   prompt. From then on, follow `AGENTS.md` from "Step 1".
 
 ## Manual setup (same thing, by hand)
 
@@ -42,20 +42,20 @@ git clone -q --depth 1 https://github.com/SakethThogarucheeti/interview-skills ~
 ```
 Not on Ubuntu? Then `cd ~/app && ./dev.sh ./preflight.sh` runs it all in an `ubuntu:24.04` container with `doctl` installed.
 Then do what preflight lists, and open `~/app` (Cursor: File > Open Folder, then `/interview` plus the
-prompt; Claude Code: `cd ~/app && claude`). Both tools load `~/app/AGENTS.md`.
+prompt; Claude Code: `cd ~/app && claude`). Both tools load `~/app/AGENTS.md`, the step-by-step runbook.
 
-## What's in `interview-kit/`
+## What's here
 
 | Path | What it is |
 |---|---|
-| `SKILL.md` | The playbook (~8k tokens): brief, question gate, pitfall audit, design, checklist, game-day budget |
-| `reference/` | Read on demand: scaffold file map, deploy paths + IaC, talking points, DO products, live-build tips |
-| `scaffold/` | Verified FastAPI + Postgres + Redis app with ingestion worker, API-key auth + rate limit, tests, CI, Terraform, App Platform specs, `preflight.sh`, `make e2e`, `AGENTS.md` |
-| `scaffold/dev.sh` + `.devcontainer/` | Ubuntu 24 dev container (doctl, terraform, gh, uv, Postgres, Redis) for hosts that aren't Ubuntu; `./dev.sh <cmd>` runs in it |
-| `into-project.sh` | The one setup command above |
+| `PREP.md` | For you, before the day: the format, recruiter questions, time budget, Claude Code vs Cursor, working without the kit |
+| `interview-kit/scaffold/` | The project: a verified FastAPI + Postgres + Redis app with ingestion worker, API-key auth + rate limit, tests, CI, Terraform, App Platform spec, `preflight.sh`, `make e2e`, and `AGENTS.md` (the agent's runbook) |
+| `interview-kit/SKILL.md` | Design playbook the runbook points to: clarifying questions, default assumptions, pitfall audit, `design-decisions.md` outline |
+| `interview-kit/reference/` | Read on demand: which file owns what, the deploy and its failure fixes, talking points, DigitalOcean products |
+| `interview-kit/into-project.sh` | The one setup command above |
+| `scaffold/dev.sh` + `.devcontainer/` | Ubuntu 24 dev container (doctl, terraform, gh, uv, Postgres, Redis) for practising on hosts that aren't Ubuntu |
 
-All three deploy paths (App Platform from GitHub, CI-built image, Droplet) were run live on DigitalOcean
-and pass `make e2e`, including auth and the rate limit.
+One deploy path: App Platform builds from GitHub on every push to main. It was run live on DigitalOcean and passes
+`make e2e`, including auth and the rate limit.
 
-Before the day: read `SKILL.md` §0–§2 and `reference/live-build.md`, and ask the recruiter whether
-you can clone a public repo in the container (§0). If you can't, §5.1 covers working without the kit.
+Before the day: read `PREP.md`, and ask the recruiter whether you can clone a public repo in the container.
